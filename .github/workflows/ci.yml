@@ -91,10 +91,17 @@ jobs:
           path: bin/
 
   docker:
-    name: Build and Push Docker Images
+    name: Build and Push ${{ matrix.name }}
     runs-on: ubuntu-latest
     needs: [test, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        include:
+          - name: api
+            dockerfile: ./deployments/docker/Dockerfile.api
+          - name: worker
+            dockerfile: ./deployments/docker/Dockerfile.worker
 
     steps:
       - uses: actions/checkout@v6
@@ -112,26 +119,14 @@ jobs:
           username: ${{ secrets.CONTAINER_REGISTRY_USERNAME }}
           password: ${{ secrets.CONTAINER_REGISTRY_PASSWORD }}
 
-      - name: Build and Push API image
+      - name: Build and Push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./deployments/docker/Dockerfile.api
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ vars.CONTAINER_REGISTRY_URL }}/task-queue-api:${{ env.COMMIT_SHA }}
-            ${{ vars.CONTAINER_REGISTRY_URL }}/task-queue-api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and Push Worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./deployments/docker/Dockerfile.worker
-          push: true
-          tags: |
-            ${{ vars.CONTAINER_REGISTRY_URL }}/task-queue-worker:${{ env.COMMIT_SHA }}
-            ${{ vars.CONTAINER_REGISTRY_URL }}/task-queue-worker:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ vars.CONTAINER_REGISTRY_URL }}/codigo/${{ matrix.name }}:${{ env.COMMIT_SHA }}
+            ${{ vars.CONTAINER_REGISTRY_URL }}/codigo/${{ matrix.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
