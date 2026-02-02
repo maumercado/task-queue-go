@@ -129,7 +129,7 @@ func TestExecutor_Execute_Timeout(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-func TestExecutor_Execute_Cancelled(t *testing.T) {
+func TestExecutor_Execute_Canceled(t *testing.T) {
 	handlers := map[string]TaskHandler{
 		"slow": func(ctx context.Context, t *task.Task) (map[string]interface{}, error) {
 			select {
@@ -152,7 +152,7 @@ func TestExecutor_Execute_Cancelled(t *testing.T) {
 
 	result, err := executor.Execute(ctx, testTask)
 
-	assert.Equal(t, ErrTaskCancelled, err)
+	assert.Equal(t, ErrTaskCanceled, err)
 	assert.Nil(t, result)
 }
 
@@ -189,5 +189,5 @@ func TestExecutor_HasHandler(t *testing.T) {
 func TestErrorDefinitions(t *testing.T) {
 	assert.Equal(t, "handler not found for task type", ErrHandlerNotFound.Error())
 	assert.Equal(t, "task execution timed out", ErrTaskTimeout.Error())
-	assert.Equal(t, "task execution cancelled", ErrTaskCancelled.Error())
+	assert.Equal(t, "task execution canceled", ErrTaskCanceled.Error())
 }

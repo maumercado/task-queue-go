@@ -144,9 +144,9 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only pending or scheduled tasks can be cancelled
+	// Only pending or scheduled tasks can be canceled
 	if t.State != task.StatePending && t.State != task.StateScheduled {
-		h.respondError(w, http.StatusConflict, "task cannot be cancelled in current state")
+		h.respondError(w, http.StatusConflict, "task cannot be canceled in current state")
 		return
 	}
 
@@ -162,7 +162,7 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Info().Str("task_id", taskID).Msg("task cancelled")
+	logger.Info().Str("task_id", taskID).Msg("task canceled")
 	h.respondJSON(w, http.StatusOK, t.ToResponse())
 }
 

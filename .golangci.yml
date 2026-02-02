@@ -14,29 +14,29 @@ linters:
     - misspell
     - unconvert
     - unparam
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+        - unusedwrite
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  misspell:
-    locale: US
-
-formatters-settings:
-  goimports:
-    local-prefixes: github.com/maumercado/task-queue-go
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - unparam
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/maumercado/task-queue-go

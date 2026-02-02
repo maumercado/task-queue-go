@@ -15,7 +15,7 @@ const (
 	StateCompleted
 	StateFailed
 	StateRetrying
-	StateCancelled
+	StateCanceled
 	StateDeadLetter
 )
 
@@ -33,8 +33,8 @@ func (s State) String() string {
 		return "failed"
 	case StateRetrying:
 		return "retrying"
-	case StateCancelled:
-		return "cancelled"
+	case StateCanceled:
+		return "canceled"
 	case StateDeadLetter:
 		return "dead_letter"
 	default:
@@ -56,8 +56,8 @@ func ParseState(s string) State {
 		return StateFailed
 	case "retrying":
 		return StateRetrying
-	case "cancelled":
-		return StateCancelled
+	case "canceled":
+		return StateCanceled
 	case "dead_letter":
 		return StateDeadLetter
 	default:
@@ -67,7 +67,7 @@ func ParseState(s string) State {
 
 // IsFinal returns true if the state is a terminal state
 func (s State) IsFinal() bool {
-	return s == StateCompleted || s == StateFailed || s == StateCancelled || s == StateDeadLetter
+	return s == StateCompleted || s == StateFailed || s == StateCanceled || s == StateDeadLetter
 }
 
 // IsActive returns true if the task is actively being processed
@@ -85,13 +85,13 @@ var (
 
 // ValidTransitions defines the allowed state transitions
 var ValidTransitions = map[State][]State{
-	StatePending:    {StateScheduled, StateRunning, StateCancelled},
-	StateScheduled:  {StatePending, StateRunning, StateCancelled},
-	StateRunning:    {StateCompleted, StateFailed, StateRetrying, StateCancelled},
-	StateRetrying:   {StateRunning, StateFailed, StateDeadLetter, StateCancelled},
+	StatePending:    {StateScheduled, StateRunning, StateCanceled},
+	StateScheduled:  {StatePending, StateRunning, StateCanceled},
+	StateRunning:    {StateCompleted, StateFailed, StateRetrying, StateCanceled},
+	StateRetrying:   {StateRunning, StateFailed, StateDeadLetter, StateCanceled},
 	StateFailed:     {StateRetrying, StateDeadLetter, StatePending}, // Can retry or move to DLQ
 	StateCompleted:  {},                                             // Terminal state
-	StateCancelled:  {},                                             // Terminal state
+	StateCanceled:   {},                                             // Terminal state
 	StateDeadLetter: {StatePending},                                 // Can be re-queued
 }
 
@@ -133,7 +133,7 @@ func (sm *StateMachine) Transition(target State) error {
 	switch target {
 	case StateRunning:
 		sm.task.StartedAt = &now
-	case StateCompleted, StateFailed, StateCancelled, StateDeadLetter:
+	case StateCompleted, StateFailed, StateCanceled, StateDeadLetter:
 		sm.task.CompletedAt = &now
 	}
 
@@ -178,9 +178,9 @@ func (sm *StateMachine) Retry() error {
 	return sm.Transition(StateRetrying)
 }
 
-// Cancel transitions the task to cancelled state
+// Cancel transitions the task to canceled state
 func (sm *StateMachine) Cancel() error {
-	return sm.Transition(StateCancelled)
+	return sm.Transition(StateCanceled)
 }
 
 // MoveToDLQ transitions the task to dead letter queue

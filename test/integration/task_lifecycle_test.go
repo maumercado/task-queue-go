@@ -165,7 +165,7 @@ func TestTaskLifecycle_Cancel(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &cancelResp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "cancelled", cancelResp.State)
+	assert.Equal(t, "canceled", cancelResp.State)
 }
 
 func TestTaskLifecycle_ListQueues(t *testing.T) {

@@ -76,8 +76,8 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) (result map[string
 			return nil, ErrTaskTimeout
 		}
 		if errors.Is(err, context.Canceled) {
-			log.Warn().Dur("duration", duration).Msg("task cancelled")
-			return nil, ErrTaskCancelled
+			log.Warn().Dur("duration", duration).Msg("task canceled")
+			return nil, ErrTaskCanceled
 		}
 		log.Error().Err(err).Dur("duration", duration).Msg("task failed")
 		return nil, err
@@ -106,5 +106,5 @@ func (e *Executor) HandlerTypes() []string {
 var (
 	ErrHandlerNotFound = errors.New("handler not found for task type")
 	ErrTaskTimeout     = errors.New("task execution timed out")
-	ErrTaskCancelled   = errors.New("task execution cancelled")
+	ErrTaskCanceled    = errors.New("task execution canceled")
 )

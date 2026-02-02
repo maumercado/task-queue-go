@@ -19,7 +19,7 @@ func TestState_String(t *testing.T) {
 		{StateCompleted, "completed"},
 		{StateFailed, "failed"},
 		{StateRetrying, "retrying"},
-		{StateCancelled, "cancelled"},
+		{StateCanceled, "canceled"},
 		{StateDeadLetter, "dead_letter"},
 		{State(99), "unknown"},
 	}
@@ -42,7 +42,7 @@ func TestParseState(t *testing.T) {
 		{"completed", StateCompleted},
 		{"failed", StateFailed},
 		{"retrying", StateRetrying},
-		{"cancelled", StateCancelled},
+		{"canceled", StateCanceled},
 		{"dead_letter", StateDeadLetter},
 		{"invalid", StatePending}, // Default
 		{"", StatePending},        // Default
@@ -56,7 +56,7 @@ func TestParseState(t *testing.T) {
 }
 
 func TestState_IsFinal(t *testing.T) {
-	finalStates := []State{StateCompleted, StateFailed, StateCancelled, StateDeadLetter}
+	finalStates := []State{StateCompleted, StateFailed, StateCanceled, StateDeadLetter}
 	nonFinalStates := []State{StatePending, StateScheduled, StateRunning, StateRetrying}
 
 	for _, state := range finalStates {
@@ -70,7 +70,7 @@ func TestState_IsFinal(t *testing.T) {
 
 func TestState_IsActive(t *testing.T) {
 	activeStates := []State{StateRunning, StateRetrying}
-	inactiveStates := []State{StatePending, StateScheduled, StateCompleted, StateFailed, StateCancelled, StateDeadLetter}
+	inactiveStates := []State{StatePending, StateScheduled, StateCompleted, StateFailed, StateCanceled, StateDeadLetter}
 
 	for _, state := range activeStates {
 		assert.True(t, state.IsActive(), "Expected %s to be active", state)
@@ -90,7 +90,7 @@ func TestState_CanTransitionTo(t *testing.T) {
 		// From Pending
 		{StatePending, StateScheduled, true},
 		{StatePending, StateRunning, true},
-		{StatePending, StateCancelled, true},
+		{StatePending, StateCanceled, true},
 		{StatePending, StateCompleted, false},
 		{StatePending, StateFailed, false},
 
@@ -98,7 +98,7 @@ func TestState_CanTransitionTo(t *testing.T) {
 		{StateRunning, StateCompleted, true},
 		{StateRunning, StateFailed, true},
 		{StateRunning, StateRetrying, true},
-		{StateRunning, StateCancelled, true},
+		{StateRunning, StateCanceled, true},
 		{StateRunning, StatePending, false},
 
 		// From Failed
@@ -111,8 +111,8 @@ func TestState_CanTransitionTo(t *testing.T) {
 		{StateCompleted, StatePending, false},
 		{StateCompleted, StateRunning, false},
 
-		// From Cancelled (terminal)
-		{StateCancelled, StatePending, false},
+		// From Canceled (terminal)
+		{StateCanceled, StatePending, false},
 
 		// From DeadLetter
 		{StateDeadLetter, StatePending, true},
@@ -239,7 +239,7 @@ func TestStateMachine_Cancel(t *testing.T) {
 
 	err := sm.Cancel()
 	require.NoError(t, err)
-	assert.Equal(t, StateCancelled, task.State)
+	assert.Equal(t, StateCanceled, task.State)
 }
 
 func TestStateMachine_MoveToDLQ(t *testing.T) {

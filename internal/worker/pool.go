@@ -140,7 +140,7 @@ func (p *Pool) Stop(ctx context.Context) error {
 	case <-time.After(p.config.ShutdownTimeout):
 		logger.Warn().Str("worker_id", p.id).Msg("worker pool shutdown timed out")
 	case <-ctx.Done():
-		logger.Warn().Str("worker_id", p.id).Msg("worker pool shutdown cancelled")
+		logger.Warn().Str("worker_id", p.id).Msg("worker pool shutdown canceled")
 	}
 
 	p.heartbeat.Stop()
