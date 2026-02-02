@@ -345,11 +345,87 @@ make load-test
 make load-test-stress
 ```
 
+## Client SDKs
+
+Client SDKs are generated from the [OpenAPI specification](docs/openapi.yaml).
+
+### Go Client
+
+```go
+import "github.com/maumercado/task-queue-go/pkg/client"
+
+// Create client
+c, err := client.New("http://localhost:8080",
+    client.WithAPIKey("your-api-key"),
+    client.WithTimeout(30 * time.Second),
+)
+
+// Submit a task
+task, err := c.SubmitTask(ctx, client.CreateTaskRequest{
+    Type: "email",
+    Payload: &map[string]interface{}{
+        "to": "user@example.com",
+    },
+})
+
+// Get task status
+task, err = c.GetTaskByID(ctx, task.Id.String())
+
+// WebSocket events
+c.ConnectWebSocket(ctx)
+for event := range c.Events() {
+    fmt.Printf("Event: %s\n", event.Type)
+}
+```
+
+### TypeScript Client
+
+```typescript
+import { TaskQueueClient } from '@task-queue/client';
+
+// Create client
+const client = new TaskQueueClient('http://localhost:8080', {
+  apiKey: 'your-api-key',
+});
+
+// Submit a task
+const task = await client.createTask({
+  type: 'email',
+  payload: { to: 'user@example.com' },
+});
+
+// Get task status
+const status = await client.getTask(task.id);
+
+// WebSocket events
+await client.connectWebSocket();
+client.onEvent('task.completed', (event) => {
+  console.log('Task completed:', event.data);
+});
+```
+
+### Regenerate Clients
+
+```bash
+# Generate Go client
+make generate-go-client
+
+# Generate TypeScript client
+make generate-ts-client
+
+# Generate all clients
+make generate-clients
+```
+
+See [examples/go](examples/go) and [examples/typescript](examples/typescript) for complete usage examples.
+
 ## Documentation
 
 - [API Reference](docs/api.md)
 - [Architecture](docs/architecture.md)
 - [OpenAPI Specification](docs/openapi.yaml)
+- [Go Client](pkg/client/doc.go)
+- [TypeScript Client](clients/typescript/README.md)
 
 ## License
 

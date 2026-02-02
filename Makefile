@@ -1,4 +1,4 @@
-.PHONY: build build-api build-worker run-api run-worker test test-coverage lint clean docker-build docker-up docker-down load-test load-test-smoke load-test-lifecycle
+.PHONY: build build-api build-worker run-api run-worker test test-coverage lint clean docker-build docker-up docker-down load-test load-test-smoke load-test-lifecycle generate-go-client generate-ts-client generate-clients
 
 # Go parameters
 GOCMD=go
@@ -110,6 +110,21 @@ load-test-lifecycle:
 load-test-stress:
 	k6 run --vus 100 --duration 2m test/load/task_submission.js
 
+# Client SDK generation
+generate-go-client:
+	@echo "Generating Go client from OpenAPI spec..."
+	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest)
+	oapi-codegen -generate types,client -package client -o pkg/client/client_gen.go docs/openapi.yaml
+	@echo "Go client generated: pkg/client/client_gen.go"
+
+generate-ts-client:
+	@echo "Generating TypeScript client from OpenAPI spec..."
+	cd clients/typescript && npm install && npm run generate && npm run build
+	@echo "TypeScript client generated: clients/typescript/src/generated/"
+
+generate-clients: generate-go-client generate-ts-client
+	@echo "All clients generated successfully!"
+
 # Show help
 help:
 	@echo "Available targets:"
@@ -136,3 +151,6 @@ help:
 	@echo "  load-test-smoke - Run quick smoke test (1 VU, 10s)"
 	@echo "  load-test-lifecycle - Run task lifecycle test"
 	@echo "  load-test-stress - Run stress test (100 VUs, 2m)"
+	@echo "  generate-go-client - Generate Go client from OpenAPI spec"
+	@echo "  generate-ts-client - Generate TypeScript client from OpenAPI spec"
+	@echo "  generate-clients - Generate all client SDKs"
