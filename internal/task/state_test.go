@@ -208,8 +208,8 @@ func TestStateMachine_Retry_WithRetriesLeft(t *testing.T) {
 	sm := NewStateMachine(task)
 
 	// Start then fail
-	sm.Start("worker-123")
-	sm.Fail("error")
+	_ = sm.Start("worker-123")
+	_ = sm.Fail("error")
 
 	// Should transition to retrying
 	err := sm.Retry()
@@ -224,8 +224,8 @@ func TestStateMachine_Retry_NoRetriesLeft(t *testing.T) {
 	sm := NewStateMachine(task)
 
 	// Start then fail
-	sm.Start("worker-123")
-	sm.Fail("error")
+	_ = sm.Start("worker-123")
+	_ = sm.Fail("error")
 
 	// Should transition to dead letter
 	err := sm.Retry()
@@ -247,8 +247,8 @@ func TestStateMachine_MoveToDLQ(t *testing.T) {
 	sm := NewStateMachine(task)
 
 	// Start -> Fail -> DLQ
-	sm.Start("worker")
-	sm.Fail("error")
+	_ = sm.Start("worker")
+	_ = sm.Fail("error")
 
 	err := sm.MoveToDLQ()
 	require.NoError(t, err)

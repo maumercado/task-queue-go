@@ -210,7 +210,9 @@ type ErrorResponse struct {
 func (h *TaskHandler) respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		logger.Error().Err(err).Msg("Failed to encode JSON response")
+	}
 }
 
 func (h *TaskHandler) respondError(w http.ResponseWriter, status int, message string) {

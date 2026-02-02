@@ -42,11 +42,11 @@ func (s State) String() string {
 // Pool manages a pool of concurrent worker goroutines.
 // Coordinates task fetching, execution, retry logic, and graceful shutdown.
 type Pool struct {
-	id             string              // Unique identifier for this worker pool
-	queue          *queue.RedisQueue   // Queue to fetch tasks from
-	dlq            *queue.DLQ          // Dead letter queue for failed tasks
-	executor       *Executor           // Executes task handlers
-	heartbeat      *Heartbeat          // Sends heartbeats to indicate liveness
+	id             string            // Unique identifier for this worker pool
+	queue          *queue.RedisQueue // Queue to fetch tasks from
+	dlq            *queue.DLQ        // Dead letter queue for failed tasks
+	executor       *Executor         // Executes task handlers
+	heartbeat      *Heartbeat        // Sends heartbeats to indicate liveness
 	config         *config.WorkerConfig
 	state          State
 	stateMu        sync.RWMutex
@@ -297,7 +297,8 @@ func (p *Pool) processNextTask(ctx context.Context) error {
 
 	// Handle success or failure
 	if execErr != nil {
-		return p.handleTaskFailure(ctx, t, messageID, execErr)
+		p.handleTaskFailure(ctx, t, messageID, execErr)
+		return nil
 	}
 
 	return p.handleTaskSuccess(ctx, t, messageID, result)
@@ -329,7 +330,7 @@ func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID st
 }
 
 // handleTaskFailure handles retry logic or moves to DLQ
-func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID string, execErr error) error {
+func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID string, execErr error) {
 	log := logger.WithTask(t.ID)
 	log.Error().Err(execErr).Msg("task execution failed")
 
@@ -352,7 +353,9 @@ func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID st
 			log.Error().Err(err).Msg("failed to re-enqueue task")
 		}
 
-		p.queue.Acknowledge(ctx, t, messageID)
+		if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
+			log.Error().Err(err).Msg("failed to acknowledge task after retry")
+		}
 	} else {
 		// Max retries exceeded, move to dead letter queue
 		if err := sm.Fail(execErr.Error()); err != nil {
@@ -365,10 +368,10 @@ func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID st
 			log.Error().Err(err).Msg("failed to add task to DLQ")
 		}
 
-		p.queue.Acknowledge(ctx, t, messageID)
+		if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
+			log.Error().Err(err).Msg("failed to acknowledge task after DLQ")
+		}
 	}
-
-	return nil
 }
 
 // recoveryLoop periodically checks for orphaned tasks from crashed workers
@@ -415,6 +418,8 @@ func (p *Pool) recoverOrphanedTasks(ctx context.Context) {
 		}
 
 		// Acknowledge old message
-		p.queue.Acknowledge(ctx, t, messageIDs[i])
+		if err := p.queue.Acknowledge(ctx, t, messageIDs[i]); err != nil {
+			logger.Error().Err(err).Str("task_id", t.ID).Msg("failed to acknowledge recovered task")
+		}
 	}
 }

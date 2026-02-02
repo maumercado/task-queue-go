@@ -13,8 +13,8 @@ func TestLoad_Defaults(t *testing.T) {
 	// Clear any existing config files from search path
 	originalDir, _ := os.Getwd()
 	tmpDir := t.TempDir()
-	os.Chdir(tmpDir)
-	defer os.Chdir(originalDir)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -92,8 +92,8 @@ loglevel: "warn"
 
 	// Change to temp directory so viper finds the config
 	originalDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(originalDir)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	cfg, err := Load()
 	require.NoError(t, err)

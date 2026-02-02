@@ -31,12 +31,12 @@ func TestRetryPolicy_CalculateBackoff(t *testing.T) {
 		attempt  int
 		expected time.Duration
 	}{
-		{0, 1 * time.Second},            // Initial
-		{1, 2 * time.Second},            // 1 * 2^1
-		{2, 4 * time.Second},            // 1 * 2^2
-		{3, 8 * time.Second},            // 1 * 2^3
-		{4, 16 * time.Second},           // 1 * 2^4
-		{10, 1 * time.Minute},           // Capped at max
+		{0, 1 * time.Second},  // Initial
+		{1, 2 * time.Second},  // 1 * 2^1
+		{2, 4 * time.Second},  // 1 * 2^2
+		{3, 8 * time.Second},  // 1 * 2^3
+		{4, 16 * time.Second}, // 1 * 2^4
+		{10, 1 * time.Minute}, // Capped at max
 	}
 
 	for _, tt := range tests {
@@ -209,7 +209,7 @@ func TestRetryer_PrepareForRequeue(t *testing.T) {
 
 	// Transition to failed first
 	sm := NewStateMachine(task)
-	sm.Fail("error")
+	_ = sm.Fail("error")
 
 	retryer.PrepareForRequeue(task)
 

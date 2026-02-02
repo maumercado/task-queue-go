@@ -145,18 +145,18 @@ func TestFromRequest_Defaults(t *testing.T) {
 func TestTask_ToResponse(t *testing.T) {
 	now := time.Now().UTC()
 	task := &Task{
-		ID:          "task-123",
-		Type:        "test",
-		Payload:     map[string]interface{}{"key": "value"},
-		Priority:    PriorityHigh,
-		State:       StateRunning,
-		Attempts:    1,
-		MaxRetries:  3,
-		WorkerID:    "worker-1",
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		StartedAt:   &now,
-		Metadata:    map[string]string{"key": "value"},
+		ID:         "task-123",
+		Type:       "test",
+		Payload:    map[string]interface{}{"key": "value"},
+		Priority:   PriorityHigh,
+		State:      StateRunning,
+		Attempts:   1,
+		MaxRetries: 3,
+		WorkerID:   "worker-1",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		StartedAt:  &now,
+		Metadata:   map[string]string{"key": "value"},
 	}
 
 	resp := task.ToResponse()
@@ -239,17 +239,17 @@ func TestTask_IncrementAttempts(t *testing.T) {
 func TestTask_JSONMarshal_Unmarshal(t *testing.T) {
 	now := time.Now().UTC()
 	task := &Task{
-		ID:          "test-id",
-		Type:        "email",
-		Payload:     map[string]interface{}{"to": "test@example.com"},
-		Priority:    PriorityHigh,
-		State:       StatePending,
-		Attempts:    0,
-		MaxRetries:  3,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		Timeout:     5 * time.Minute,
-		Metadata:    map[string]string{"source": "api"},
+		ID:         "test-id",
+		Type:       "email",
+		Payload:    map[string]interface{}{"to": "test@example.com"},
+		Priority:   PriorityHigh,
+		State:      StatePending,
+		Attempts:   0,
+		MaxRetries: 3,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Timeout:    5 * time.Minute,
+		Metadata:   map[string]string{"source": "api"},
 	}
 
 	data, err := json.Marshal(task)

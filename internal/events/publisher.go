@@ -18,9 +18,9 @@ const (
 	EventTaskRetrying  EventType = "task.retrying"
 
 	// Worker events
-	EventWorkerJoined EventType = "worker.joined"
-	EventWorkerLeft   EventType = "worker.left"
-	EventWorkerPaused EventType = "worker.paused"
+	EventWorkerJoined  EventType = "worker.joined"
+	EventWorkerLeft    EventType = "worker.left"
+	EventWorkerPaused  EventType = "worker.paused"
 	EventWorkerResumed EventType = "worker.resumed"
 
 	// System events

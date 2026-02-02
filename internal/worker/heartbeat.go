@@ -21,13 +21,13 @@ const (
 
 // WorkerInfo contains information about a worker
 type WorkerInfo struct {
-	ID           string    `json:"id"`
-	State        string    `json:"state"`
-	StartedAt    time.Time `json:"started_at"`
+	ID            string    `json:"id"`
+	State         string    `json:"state"`
+	StartedAt     time.Time `json:"started_at"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
-	ActiveTasks  int       `json:"active_tasks"`
-	Concurrency  int       `json:"concurrency"`
-	Version      string    `json:"version,omitempty"`
+	ActiveTasks   int       `json:"active_tasks"`
+	Concurrency   int       `json:"concurrency"`
+	Version       string    `json:"version,omitempty"`
 }
 
 // Heartbeat manages worker heartbeat mechanism

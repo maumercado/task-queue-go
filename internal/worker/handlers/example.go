@@ -81,7 +81,7 @@ func HTTPHandler(ctx context.Context, t *task.Task) (map[string]interface{}, err
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return map[string]interface{}{
 		"status_code": resp.StatusCode,
@@ -186,7 +186,7 @@ func WebhookHandler(ctx context.Context, t *task.Task) (map[string]interface{}, 
 	if err != nil {
 		return nil, fmt.Errorf("webhook request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("webhook returned error status: %d", resp.StatusCode)
@@ -212,5 +212,5 @@ func FailHandler(ctx context.Context, t *task.Task) (map[string]interface{}, err
 		Str("message", message).
 		Msg("Fail handler processing task")
 
-	return nil, fmt.Errorf(message)
+	return nil, fmt.Errorf("%s", message)
 }

@@ -34,7 +34,11 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create Redis queue")
 	}
-	defer redisQueue.Close()
+	defer func() {
+		if err := redisQueue.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close Redis queue")
+		}
+	}()
 
 	// Create DLQ
 	dlq := queue.NewDLQ(redisQueue.Client())

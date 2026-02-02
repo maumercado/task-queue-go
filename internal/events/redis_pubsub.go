@@ -73,7 +73,7 @@ func (r *RedisPubSub) Subscribe(ctx context.Context, eventTypes ...EventType) (<
 		for {
 			select {
 			case <-ctx.Done():
-				pubsub.Close()
+				_ = pubsub.Close()
 				return
 			case msg, ok := <-ch:
 				if !ok {
@@ -121,7 +121,7 @@ func (r *RedisPubSub) SubscribeAll(ctx context.Context) (<-chan *Event, error) {
 		for {
 			select {
 			case <-ctx.Done():
-				pubsub.Close()
+				_ = pubsub.Close()
 				return
 			case msg, ok := <-ch:
 				if !ok {
@@ -154,7 +154,7 @@ func (r *RedisPubSub) Close() error {
 	defer r.mu.Unlock()
 
 	for _, pubsub := range r.subscribers {
-		pubsub.Close()
+		_ = pubsub.Close()
 	}
 	r.subscribers = make(map[string]*redis.PubSub)
 

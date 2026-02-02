@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	scheduledSetKey = "tasks:scheduled"
-	schedulerLockKey = "scheduler:lock"
+	scheduledSetKey       = "tasks:scheduled"
+	schedulerLockKey      = "scheduler:lock"
 	schedulerPollInterval = 1 * time.Second
-	schedulerLockTTL = 5 * time.Second
+	schedulerLockTTL      = 5 * time.Second
 )
 
 // Scheduler polls the scheduled tasks set and moves due tasks to priority queues

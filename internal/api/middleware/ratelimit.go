@@ -66,7 +66,7 @@ func RateLimit(rps int) func(next http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"Too Many Requests","message":"rate limit exceeded"}`))
+				_, _ = w.Write([]byte(`{"error":"Too Many Requests","message":"rate limit exceeded"}`))
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -151,7 +151,7 @@ func ClientRateLimit(rps int) func(next http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"Too Many Requests","message":"rate limit exceeded"}`))
+				_, _ = w.Write([]byte(`{"error":"Too Many Requests","message":"rate limit exceeded"}`))
 				return
 			}
 			next.ServeHTTP(w, r)
