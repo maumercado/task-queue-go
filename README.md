@@ -1,9 +1,10 @@
 # Task Queue Go
 
+[![CI](https://github.com/maumercado/task-queue-go/actions/workflows/ci.yml/badge.svg)](https://github.com/maumercado/task-queue-go/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/maumercado/task-queue-go)](https://goreportcard.com/report/github.com/maumercado/task-queue-go)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)
 ![Redis](https://img.shields.io/badge/Redis-7+-DC382D?style=flat&logo=redis)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/maumercado/task-queue-go)](https://goreportcard.com/report/github.com/maumercado/task-queue-go)
 
 A horizontally scalable distributed task queue built with Go and Redis Streams.
 
