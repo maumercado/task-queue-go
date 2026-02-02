@@ -1,0 +1,736 @@
+openapi: 3.0.3
+info:
+  title: Task Queue API
+  description: |
+    A distributed task queue system using Redis Streams for reliable message delivery.
+
+    Features:
+    - Priority-based task processing (critical, high, normal, low)
+    - Scheduled tasks for delayed execution
+    - Automatic retries with exponential backoff
+    - Dead letter queue for failed tasks
+    - Real-time WebSocket events
+    - Worker management (pause/resume)
+    - Rate limiting and backpressure
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Tasks
+    description: Task submission and management
+  - name: Admin
+    description: Administrative operations
+  - name: Health
+    description: Health and monitoring endpoints
+
+paths:
+  /api/v1/tasks:
+    post:
+      tags:
+        - Tasks
+      summary: Create a new task
+      description: |
+        Submits a new task to the queue. Tasks can be executed immediately or scheduled for later.
+        If the queue is at capacity, returns 503 Service Unavailable.
+        Rate limiting applies per client (429 Too Many Requests).
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+            examples:
+              immediate:
+                summary: Immediate task
+                value:
+                  type: email
+                  payload:
+                    to: user@example.com
+                    subject: Welcome
+                  priority: 1
+              scheduled:
+                summary: Scheduled task
+                value:
+                  type: report
+                  payload:
+                    report_id: daily-123
+                  priority: 2
+                  scheduled_at: "2024-01-15T10:00:00Z"
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Invalid request body or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Queue at capacity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - Tasks
+      summary: Get queue statistics
+      description: Returns the current depth of each priority queue
+      operationId: listTasks
+      responses:
+        '200':
+          description: Queue statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueStats'
+
+  /api/v1/tasks/{taskId}:
+    get:
+      tags:
+        - Tasks
+      summary: Get task by ID
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Tasks
+      summary: Cancel a task
+      description: Cancels a pending or scheduled task. Cannot cancel running tasks.
+      operationId: cancelTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Task cannot be cancelled in current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API and Redis connection
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /admin/workers:
+    get:
+      tags:
+        - Admin
+      summary: List active workers
+      operationId: listWorkers
+      responses:
+        '200':
+          description: List of active workers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerListResponse'
+
+  /admin/workers/{workerId}:
+    get:
+      tags:
+        - Admin
+      summary: Get worker details
+      operationId: getWorker
+      parameters:
+        - $ref: '#/components/parameters/workerId'
+      responses:
+        '200':
+          description: Worker details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerInfo'
+        '404':
+          description: Worker not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/workers/{workerId}/pause:
+    post:
+      tags:
+        - Admin
+      summary: Pause a worker
+      description: Temporarily stops the worker from processing new tasks
+      operationId: pauseWorker
+      parameters:
+        - $ref: '#/components/parameters/workerId'
+      responses:
+        '200':
+          description: Worker paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: worker paused
+                  worker_id:
+                    type: string
+        '404':
+          description: Worker not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/workers/{workerId}/resume:
+    post:
+      tags:
+        - Admin
+      summary: Resume a worker
+      description: Resumes task processing for a paused worker
+      operationId: resumeWorker
+      parameters:
+        - $ref: '#/components/parameters/workerId'
+      responses:
+        '200':
+          description: Worker resumed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: worker resumed
+                  worker_id:
+                    type: string
+        '404':
+          description: Worker not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/queues:
+    get:
+      tags:
+        - Admin
+      summary: Get queue statistics
+      operationId: getQueues
+      responses:
+        '200':
+          description: Queue statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueDetailedStats'
+
+  /admin/queues/{priority}:
+    delete:
+      tags:
+        - Admin
+      summary: Purge a queue
+      description: Removes all messages from the specified priority queue
+      operationId: purgeQueue
+      parameters:
+        - $ref: '#/components/parameters/priority'
+      responses:
+        '200':
+          description: Queue purged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: queue purged
+                  priority:
+                    type: string
+        '400':
+          description: Invalid priority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/tasks/{taskId}/retry:
+    post:
+      tags:
+        - Admin
+      summary: Retry a failed task
+      description: Manually retries a failed or dead_letter task
+      operationId: retryTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: Task re-queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: task re-queued
+                  task_id:
+                    type: string
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Task cannot be retried in current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/dlq:
+    get:
+      tags:
+        - Admin
+      summary: List DLQ entries
+      operationId: listDLQ
+      responses:
+        '200':
+          description: DLQ entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DLQListResponse'
+    delete:
+      tags:
+        - Admin
+      summary: Clear DLQ
+      description: Removes all entries from the dead letter queue
+      operationId: clearDLQ
+      responses:
+        '200':
+          description: DLQ cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: DLQ cleared
+
+  /admin/dlq/retry:
+    post:
+      tags:
+        - Admin
+      summary: Retry DLQ tasks
+      description: Re-queues one or all tasks from the dead letter queue
+      operationId: retryDLQ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryDLQRequest'
+      responses:
+        '200':
+          description: Tasks re-queued
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RetryDLQSingleResponse'
+                  - $ref: '#/components/schemas/RetryDLQAllResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found in DLQ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ws:
+    get:
+      tags:
+        - Health
+      summary: WebSocket connection
+      description: |
+        Establishes a WebSocket connection for real-time events.
+
+        Event types:
+        - task.submitted
+        - task.started
+        - task.completed
+        - task.failed
+        - task.retrying
+        - worker.joined
+        - worker.left
+        - worker.paused
+        - worker.resumed
+        - queue.depth
+        - system.metrics
+      operationId: websocketConnect
+      responses:
+        '101':
+          description: Switching protocols to WebSocket
+
+  /metrics:
+    get:
+      tags:
+        - Health
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus exposition format
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  parameters:
+    taskId:
+      name: taskId
+      in: path
+      required: true
+      description: Task identifier
+      schema:
+        type: string
+        format: uuid
+    workerId:
+      name: workerId
+      in: path
+      required: true
+      description: Worker identifier
+      schema:
+        type: string
+    priority:
+      name: priority
+      in: path
+      required: true
+      description: Queue priority level
+      schema:
+        type: string
+        enum: [critical, high, normal, low]
+
+  schemas:
+    CreateTaskRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: Task type identifier (must match a registered handler)
+          example: email
+        payload:
+          type: object
+          additionalProperties: true
+          description: Task-specific payload data
+          example:
+            to: user@example.com
+            subject: Welcome
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 1
+          description: "Priority level: 0=low, 1=normal, 2=high, 3=critical"
+        max_retries:
+          type: integer
+          minimum: 0
+          default: 3
+          description: Maximum number of retry attempts
+        timeout:
+          type: integer
+          minimum: 1
+          default: 300
+          description: Task execution timeout in seconds
+        scheduled_at:
+          type: string
+          format: date-time
+          description: Time to execute the task (ISO 8601). If in the future, task is scheduled.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Custom metadata key-value pairs
+
+    TaskResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+        state:
+          type: string
+          enum: [pending, scheduled, running, completed, failed, retrying, cancelled, dead_letter]
+        attempts:
+          type: integer
+        max_retries:
+          type: integer
+        error:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        worker_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: HTTP status text
+          example: Bad Request
+        message:
+          type: string
+          description: Detailed error message
+          example: task type is required
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        redis:
+          type: string
+          enum: [connected, disconnected]
+        error:
+          type: string
+
+    QueueStats:
+      type: object
+      properties:
+        queue_depths:
+          type: object
+          properties:
+            critical:
+              type: integer
+            high:
+              type: integer
+            normal:
+              type: integer
+            low:
+              type: integer
+        total_pending:
+          type: integer
+
+    QueueDetailedStats:
+      type: object
+      properties:
+        queues:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              depth:
+                type: integer
+              priority:
+                type: integer
+        total_depth:
+          type: integer
+
+    WorkerInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum: [idle, busy, paused, shutting_down]
+        started_at:
+          type: string
+          format: date-time
+        last_heartbeat:
+          type: string
+          format: date-time
+        active_tasks:
+          type: integer
+        concurrency:
+          type: integer
+        version:
+          type: string
+
+    WorkerListResponse:
+      type: object
+      properties:
+        workers:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerInfo'
+        count:
+          type: integer
+
+    DLQEntry:
+      type: object
+      properties:
+        task_id:
+          type: string
+        task_type:
+          type: string
+        reason:
+          type: string
+        added_at:
+          type: string
+          format: date-time
+
+    DLQListResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/DLQEntry'
+        size:
+          type: integer
+
+    RetryDLQRequest:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: Specific task ID to retry
+        retry_all:
+          type: boolean
+          description: Set to true to retry all DLQ tasks
+        message_id:
+          type: string
+          description: Optional stream message ID
+
+    RetryDLQSingleResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: task re-queued
+        task_id:
+          type: string
+
+    RetryDLQAllResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: tasks re-queued
+        retried_count:
+          type: integer
+
+    WebSocketEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - task.submitted
+            - task.started
+            - task.completed
+            - task.failed
+            - task.retrying
+            - worker.joined
+            - worker.left
+            - worker.paused
+            - worker.resumed
+            - queue.depth
+            - system.metrics
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true

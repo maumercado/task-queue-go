@@ -1,0 +1,50 @@
+# Task Queue Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  adminport: 8081
+  readtimeout: 30s
+  writetimeout: 30s
+  idletimeout: 120s
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+  poolsize: 100
+  minidleconns: 10
+  maxretries: 3
+  dialtimeout: 5s
+  readtimeout: 3s
+  writetimeout: 3s
+
+worker:
+  id: ""  # Auto-generated if empty
+  concurrency: 10
+  heartbeatinterval: 5s
+  heartbeattimeout: 15s
+  shutdowntimeout: 30s
+
+queue:
+  streamprefix: "tasks"
+  consumergroup: "workers"
+  maxqueuesize: 1000000
+  blocktimeout: 5s
+  claimminidle: 30s
+  recoveryinterval: 10s
+  retrymaxattempts: 3
+  retryinitialbackoff: 1s
+  retrymaxbackoff: 5m
+  retrybackofffactor: 2.0
+
+metrics:
+  enabled: true
+  path: "/metrics"
+
+auth:
+  enabled: false
+  jwtsecret: ""
+  apikeys: []
+
+loglevel: "info"

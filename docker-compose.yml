@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.api
+    ports:
+      - "8080:8080"
+    environment:
+      - TASKQUEUE_REDIS_ADDR=redis:6379
+      - TASKQUEUE_SERVER_HOST=0.0.0.0
+      - TASKQUEUE_SERVER_PORT=8080
+      - TASKQUEUE_LOGLEVEL=debug
+      - ENV=development
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.worker
+    environment:
+      - TASKQUEUE_REDIS_ADDR=redis:6379
+      - TASKQUEUE_WORKER_CONCURRENCY=10
+      - TASKQUEUE_LOGLEVEL=debug
+      - ENV=development
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - api
+
+volumes:
+  redis-data:
+  prometheus-data:
