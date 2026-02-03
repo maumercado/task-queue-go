@@ -1,0 +1,121 @@
+:root {
+  --color-bg: #1a1a2e;
+  --color-surface: #16213e;
+  --color-primary: #0f3460;
+  --color-accent: #e94560;
+  --color-text: #eee;
+  --color-text-muted: #888;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-error: #ef4444;
+  --color-critical: #dc2626;
+  --color-high: #f97316;
+  --color-normal: #3b82f6;
+  --color-low: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  background: var(--color-primary);
+  color: var(--color-text);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.danger {
+  background: var(--color-error);
+}
+
+button.success {
+  background: var(--color-success);
+  color: #000;
+}
+
+input, textarea, select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  color: var(--color-text);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.card {
+  background: var(--color-surface);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge.success { background: var(--color-success); color: #000; }
+.badge.warning { background: var(--color-warning); color: #000; }
+.badge.error { background: var(--color-error); }
+.badge.muted { background: var(--color-text-muted); }
+
+h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+h2 { font-size: 1.25rem; margin-bottom: 0.75rem; }
+h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.flex {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
