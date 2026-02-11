@@ -15,17 +15,17 @@ import (
 type EventType string
 
 const (
-	EventTaskSubmitted  EventType = "task.submitted"
-	EventTaskStarted    EventType = "task.started"
-	EventTaskCompleted  EventType = "task.completed"
-	EventTaskFailed     EventType = "task.failed"
-	EventTaskRetrying   EventType = "task.retrying"
-	EventWorkerJoined   EventType = "worker.joined"
-	EventWorkerLeft     EventType = "worker.left"
-	EventWorkerPaused   EventType = "worker.paused"
-	EventWorkerResumed  EventType = "worker.resumed"
-	EventQueueDepth     EventType = "queue.depth"
-	EventSystemMetrics  EventType = "system.metrics"
+	EventTaskSubmitted EventType = "task.submitted"
+	EventTaskStarted   EventType = "task.started"
+	EventTaskCompleted EventType = "task.completed"
+	EventTaskFailed    EventType = "task.failed"
+	EventTaskRetrying  EventType = "task.retrying"
+	EventWorkerJoined  EventType = "worker.joined"
+	EventWorkerLeft    EventType = "worker.left"
+	EventWorkerPaused  EventType = "worker.paused"
+	EventWorkerResumed EventType = "worker.resumed"
+	EventQueueDepth    EventType = "queue.depth"
+	EventSystemMetrics EventType = "system.metrics"
 )
 
 // Event represents a WebSocket event from the server.
@@ -37,14 +37,14 @@ type Event struct {
 
 // WebSocketClient handles WebSocket connections for real-time events.
 type WebSocketClient struct {
-	conn       *websocket.Conn
-	baseURL    string
-	events     chan *Event
-	done       chan struct{}
-	closeOnce  sync.Once
-	mu         sync.RWMutex
-	connected  bool
-	apiKey     string
+	conn      *websocket.Conn
+	baseURL   string
+	events    chan *Event
+	done      chan struct{}
+	closeOnce sync.Once
+	mu        sync.RWMutex
+	connected bool
+	apiKey    string
 }
 
 // newWebSocketClient creates a new WebSocket client.
@@ -121,9 +121,8 @@ func (ws *WebSocketClient) readLoop() {
 		default:
 			_, message, err := ws.conn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-					// Log or handle unexpected close
-				}
+				// Expected close errors are ignored; unexpected ones could be logged
+				// by the caller via the events channel closing.
 				return
 			}
 
@@ -165,7 +164,7 @@ func (ws *WebSocketClient) Close() error {
 				websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
 			)
-			ws.conn.Close()
+			_ = ws.conn.Close()
 		}
 	})
 	return err
@@ -206,7 +205,7 @@ func (ws *WebSocketClient) Unsubscribe(eventTypes ...EventType) error {
 	}
 
 	msg := map[string]interface{}{
-		"action":     "unsubscribe",
+		"action": "unsubscribe",
 		"events": eventTypes,
 	}
 

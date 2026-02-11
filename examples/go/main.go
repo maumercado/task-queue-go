@@ -114,12 +114,14 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 		// Subscribe to task events
-		c.SubscribeEvents(
+		if err := c.SubscribeEvents(
 			client.EventTaskSubmitted,
 			client.EventTaskStarted,
 			client.EventTaskCompleted,
 			client.EventTaskFailed,
-		)
+		); err != nil {
+			log.Printf("Failed to subscribe to events: %v", err)
+		}
 
 		// Listen for events with timeout
 		timeout := time.After(10 * time.Second)
@@ -151,7 +153,9 @@ func main() {
 			}
 		}
 
-		c.CloseWebSocket()
+		if err := c.CloseWebSocket(); err != nil {
+			log.Printf("Failed to close WebSocket: %v", err)
+		}
 		fmt.Println("WebSocket closed")
 	}
 
@@ -161,7 +165,7 @@ func main() {
 	if err != nil {
 		fmt.Printf("Could not cancel task (may already be processed): %v\n", err)
 	} else {
-		fmt.Printf("Cancelled task %s\n", task.Id.String())
+		fmt.Printf("Canceled task %s\n", task.Id.String())
 	}
 
 	fmt.Println("\nDone!")
