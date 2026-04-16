@@ -18,17 +18,19 @@ type ScheduleTaskFunc func(ctx context.Context, t *task.Task, scheduledAt time.T
 
 // TaskHandler handles task-related HTTP requests
 type TaskHandler struct {
-	queue        *queue.RedisQueue
-	scheduleTask ScheduleTaskFunc
-	maxQueueSize int64
+	queue             *queue.RedisQueue
+	scheduleTask      ScheduleTaskFunc
+	maxQueueSize      int64
+	defaultMaxRetries int
 }
 
 // NewTaskHandler creates a new task handler
-func NewTaskHandler(q *queue.RedisQueue, scheduleTask ScheduleTaskFunc, maxQueueSize int64) *TaskHandler {
+func NewTaskHandler(q *queue.RedisQueue, scheduleTask ScheduleTaskFunc, maxQueueSize int64, defaultMaxRetries int) *TaskHandler {
 	return &TaskHandler{
-		queue:        q,
-		scheduleTask: scheduleTask,
-		maxQueueSize: maxQueueSize,
+		queue:             q,
+		scheduleTask:      scheduleTask,
+		maxQueueSize:      maxQueueSize,
+		defaultMaxRetries: defaultMaxRetries,
 	}
 }
 
@@ -63,6 +65,12 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Create task
 	t := task.FromRequest(&req)
+
+	// Apply config default for max_retries when client omits it (request value <= 0).
+	// A client sending explicit 0 also gets the default (treat 0 as "use default").
+	if req.MaxRetries <= 0 && h.defaultMaxRetries > 0 {
+		t.MaxRetries = h.defaultMaxRetries
+	}
 
 	// Check if this is a scheduled task
 	if req.ScheduledAt != nil && req.ScheduledAt.After(time.Now().UTC()) {
@@ -144,8 +152,13 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only pending or scheduled tasks can be canceled
-	if t.State != task.StatePending && t.State != task.StateScheduled {
+	// pending, scheduled, and retrying tasks can be canceled.
+	// retrying = waiting in backoff delay before next attempt.
+	cancellable := t.State == task.StatePending ||
+		t.State == task.StateScheduled ||
+		t.State == task.StateRetrying
+
+	if !cancellable {
 		h.respondError(w, http.StatusConflict, "task cannot be canceled in current state")
 		return
 	}
@@ -154,6 +167,15 @@ func (h *TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	if err := sm.Cancel(); err != nil {
 		h.respondError(w, http.StatusConflict, "failed to cancel task")
 		return
+	}
+
+	// Remove from scheduled sorted set so scheduler does not reactivate.
+	// Applies to both scheduled (future first run) and retrying (backoff delay).
+	if t.State == task.StateScheduled || t.State == task.StateRetrying {
+		if err := h.queue.RemoveScheduledTask(r.Context(), taskID); err != nil {
+			logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to remove task from scheduled set")
+			// Non-fatal: scheduler will skip canceled tasks safely.
+		}
 	}
 
 	if err := h.queue.UpdateTask(r.Context(), t); err != nil {

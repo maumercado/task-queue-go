@@ -308,11 +308,16 @@ func TestWorkerPool_StartStop(t *testing.T) {
 			WriteTimeout: 3 * time.Second,
 		},
 		Queue: config.QueueConfig{
-			StreamPrefix:    "test_tasks",
-			ConsumerGroup:   "test_workers",
-			BlockTimeout:    1 * time.Second,
-			ClaimMinIdle:    5 * time.Second,
-			RecoveryInterval: 5 * time.Second,
+			StreamPrefix:        "test_tasks",
+			ConsumerGroup:       "test_workers",
+			BlockTimeout:        1 * time.Second,
+			ClaimMinIdle:        5 * time.Second,
+			RecoveryInterval:    5 * time.Second,
+			RetryMaxAttempts:    3,
+			RetryInitialBackoff: 100 * time.Millisecond,
+			RetryMaxBackoff:     1 * time.Second,
+			RetryBackoffFactor:  2.0,
+			RetryJitterFactor:   0,
 		},
 		Worker: config.WorkerConfig{
 			ID:                "test-worker",
@@ -335,7 +340,7 @@ func TestWorkerPool_StartStop(t *testing.T) {
 		},
 	}
 
-	pool := worker.NewPool(&cfg.Worker, redisQueue, dlq, handlers)
+	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

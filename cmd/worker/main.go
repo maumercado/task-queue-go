@@ -51,8 +51,8 @@ func main() {
 		"fail":    failHandler,
 	}
 
-	// Create worker pool
-	pool := worker.NewPool(&cfg.Worker, redisQueue, dlq, handlers)
+	// Create worker pool (queue config drives retry policy)
+	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers)
 
 	// Start worker pool
 	ctx, cancel := context.WithCancel(context.Background())

@@ -37,6 +37,7 @@ queue:
   retryinitialbackoff: 1s
   retrymaxbackoff: 5m
   retrybackofffactor: 2.0
+  retryjitterfactor: 0.1
 
 metrics:
   enabled: true

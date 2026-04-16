@@ -41,7 +41,7 @@ func NewServer(cfg *config.Config, q *queue.RedisQueue, dlq *queue.DLQ, publishe
 		queue:        q,
 		dlq:          dlq,
 		config:       cfg,
-		taskHandler:  handlers.NewTaskHandler(q, scheduleTask, cfg.Queue.MaxQueueSize),
+		taskHandler:  handlers.NewTaskHandler(q, scheduleTask, cfg.Queue.MaxQueueSize, cfg.Queue.RetryMaxAttempts),
 		adminHandler: handlers.NewAdminHandler(q, dlq),
 		wsHub:        wsHub,
 		wsHandler:    websocket.NewHandler(wsHub),

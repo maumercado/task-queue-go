@@ -14,6 +14,9 @@ import (
 	"github.com/maumercado/task-queue-go/internal/task"
 )
 
+// ScheduleTaskFunc schedules a task for delayed execution via the sorted set.
+type ScheduleTaskFunc func(ctx context.Context, t *task.Task, scheduledAt time.Time) error
+
 // State represents the worker pool's current operational state
 type State int
 
@@ -47,6 +50,8 @@ type Pool struct {
 	dlq            *queue.DLQ        // Dead letter queue for failed tasks
 	executor       *Executor         // Executes task handlers
 	heartbeat      *Heartbeat        // Sends heartbeats to indicate liveness
+	retryPolicy    *task.RetryPolicy // Policy governing backoff for automatic retries
+	scheduleTask   ScheduleTaskFunc  // Schedules delayed task via sorted set
 	config         *config.WorkerConfig
 	state          State
 	stateMu        sync.RWMutex
@@ -66,18 +71,29 @@ type runningTask struct {
 	startedAt time.Time
 }
 
-// NewPool creates a new worker pool with the given configuration
-func NewPool(cfg *config.WorkerConfig, q *queue.RedisQueue, dlq *queue.DLQ, handlers map[string]TaskHandler) *Pool {
+// NewPool creates a new worker pool with the given configuration.
+// queueCfg drives the retry policy used for automatic (backoff) retries.
+func NewPool(cfg *config.WorkerConfig, queueCfg *config.QueueConfig, q *queue.RedisQueue, dlq *queue.DLQ, handlers map[string]TaskHandler) *Pool {
 	// Generate worker ID if not provided
 	workerID := cfg.ID
 	if workerID == "" {
 		workerID = fmt.Sprintf("worker-%s", uuid.New().String()[:8])
 	}
 
+	retryPolicy := &task.RetryPolicy{
+		MaxAttempts:    queueCfg.RetryMaxAttempts,
+		InitialBackoff: queueCfg.RetryInitialBackoff,
+		MaxBackoff:     queueCfg.RetryMaxBackoff,
+		BackoffFactor:  queueCfg.RetryBackoffFactor,
+		JitterFactor:   queueCfg.RetryJitterFactor,
+	}
+
 	p := &Pool{
 		id:             workerID,
 		queue:          q,
 		dlq:            dlq,
+		retryPolicy:    retryPolicy,
+		scheduleTask:   queue.ScheduleTaskFunc(q.Client()),
 		config:         cfg,
 		state:          StateIdle,
 		stopCh:         make(chan struct{}),
@@ -86,7 +102,7 @@ func NewPool(cfg *config.WorkerConfig, q *queue.RedisQueue, dlq *queue.DLQ, hand
 		concurrencySem: make(chan struct{}, cfg.Concurrency), // Buffer = max concurrent tasks
 	}
 
-	p.executor = NewExecutor(handlers, task.DefaultRetryPolicy())
+	p.executor = NewExecutor(handlers, retryPolicy)
 	p.heartbeat = NewHeartbeat(q.Client(), workerID, cfg.HeartbeatInterval, cfg.HeartbeatTimeout)
 
 	return p
@@ -329,7 +345,10 @@ func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID st
 	return nil
 }
 
-// handleTaskFailure handles retry logic or moves to DLQ
+// handleTaskFailure handles retry logic or moves to DLQ.
+// Retryable failures are scheduled for delayed retry via the sorted set using
+// exponential backoff. Exhausted tasks go to the dead letter queue.
+// The stream message is ACK'd only after the retry/DLQ path is safely committed.
 func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID string, execErr error) {
 	log := logger.WithTask(t.ID)
 	log.Error().Err(execErr).Msg("task execution failed")
@@ -337,40 +356,69 @@ func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID st
 	sm := task.NewStateMachine(t)
 
 	if t.CanRetry() {
-		// Schedule for retry
-		if err := sm.Retry(); err != nil {
-			log.Error().Err(err).Msg("failed to transition to retry state")
-		}
-		t.Error = execErr.Error()
-		if err := p.queue.UpdateTask(ctx, t); err != nil {
-			log.Error().Err(err).Msg("failed to update task")
-		}
-
-		// Put back in queue for another attempt
-		retryer := task.NewRetryer(task.DefaultRetryPolicy())
-		retryer.PrepareForRequeue(t)
-		if err := p.queue.Enqueue(ctx, t); err != nil {
-			log.Error().Err(err).Msg("failed to re-enqueue task")
-		}
-
-		if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
-			log.Error().Err(err).Msg("failed to acknowledge task after retry")
-		}
-	} else {
-		// Max retries exceeded, move to dead letter queue
+		// Transition running -> failed first so ScheduleRetry can go failed -> retrying.
 		if err := sm.Fail(execErr.Error()); err != nil {
-			log.Error().Err(err).Msg("failed to mark task as failed")
-		}
-		if err := p.queue.UpdateTask(ctx, t); err != nil {
-			log.Error().Err(err).Msg("failed to update task")
-		}
-		if err := p.dlq.Add(ctx, t, "max retries exceeded"); err != nil {
-			log.Error().Err(err).Msg("failed to add task to DLQ")
+			log.Error().Err(err).Msg("failed to mark task as failed before retry")
 		}
 
-		if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
-			log.Error().Err(err).Msg("failed to acknowledge task after DLQ")
+		// Use configured backoff policy to compute ScheduledAt and move to retrying.
+		retryer := task.NewRetryer(p.retryPolicy)
+		if _, err := retryer.ScheduleRetry(t); err != nil {
+			log.Error().Err(err).Msg("failed to schedule retry — falling back to DLQ")
+			// Fall back: move to DLQ so task is not lost.
+			_ = p.queue.UpdateTask(ctx, t)
+			_ = p.dlq.Add(ctx, t, "retry scheduling failed: "+err.Error())
+			_ = p.queue.Acknowledge(ctx, t, messageID)
+			return
 		}
+
+		// Persist retrying state + ScheduledAt before adding to sorted set.
+		if err := p.queue.UpdateTask(ctx, t); err != nil {
+			log.Error().Err(err).Msg("failed to persist retrying task")
+			// Do NOT ACK — leave in PEL so orphan recovery can reclaim.
+			return
+		}
+
+		// Add to scheduled sorted set (score = unix timestamp of next retry).
+		if t.ScheduledAt == nil {
+			log.Error().Msg("ScheduledAt nil after ScheduleRetry — skipping delayed retry")
+			_ = p.queue.UpdateTask(ctx, t)
+			_ = p.dlq.Add(ctx, t, "ScheduledAt missing after retry scheduling")
+			_ = p.queue.Acknowledge(ctx, t, messageID)
+			return
+		}
+
+		if err := p.scheduleTask(ctx, t, *t.ScheduledAt); err != nil {
+			log.Error().Err(err).Msg("failed to add task to scheduled set — leaving in PEL for orphan recovery")
+			// Do NOT ACK — orphan recovery will reclaim.
+			return
+		}
+
+		log.Info().
+			Str("task_id", t.ID).
+			Time("retry_at", *t.ScheduledAt).
+			Int("attempt", t.Attempts).
+			Msg("task scheduled for delayed retry")
+
+		// Safe to ACK now — task is safely in scheduled set.
+		if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
+			log.Error().Err(err).Msg("failed to acknowledge task after scheduling retry")
+		}
+		return
+	}
+
+	// Max retries exceeded — move to dead letter queue.
+	if err := sm.Fail(execErr.Error()); err != nil {
+		log.Error().Err(err).Msg("failed to mark task as failed")
+	}
+	if err := p.queue.UpdateTask(ctx, t); err != nil {
+		log.Error().Err(err).Msg("failed to update task before DLQ")
+	}
+	if err := p.dlq.Add(ctx, t, "max retries exceeded"); err != nil {
+		log.Error().Err(err).Msg("failed to add task to DLQ")
+	}
+	if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
+		log.Error().Err(err).Msg("failed to acknowledge task after DLQ")
 	}
 }
 
@@ -408,8 +456,9 @@ func (p *Pool) recoverOrphanedTasks(ctx context.Context) {
 			Str("type", t.Type).
 			Msg("recovered orphaned task")
 
-		// Reset and re-enqueue for processing
-		retryer := task.NewRetryer(task.DefaultRetryPolicy())
+		// Crash recovery: re-enqueue immediately regardless of retry policy.
+		// Orphaned tasks were never fully processed, so backoff does not apply.
+		retryer := task.NewRetryer(p.retryPolicy)
 		retryer.PrepareForRequeue(t)
 
 		if err := p.queue.Enqueue(ctx, t); err != nil {

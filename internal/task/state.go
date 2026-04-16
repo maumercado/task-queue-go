@@ -88,11 +88,11 @@ var ValidTransitions = map[State][]State{
 	StatePending:    {StateScheduled, StateRunning, StateCanceled},
 	StateScheduled:  {StatePending, StateRunning, StateCanceled},
 	StateRunning:    {StateCompleted, StateFailed, StateRetrying, StateCanceled},
-	StateRetrying:   {StateRunning, StateFailed, StateDeadLetter, StateCanceled},
-	StateFailed:     {StateRetrying, StateDeadLetter, StatePending}, // Can retry or move to DLQ
-	StateCompleted:  {},                                             // Terminal state
-	StateCanceled:   {},                                             // Terminal state
-	StateDeadLetter: {StatePending},                                 // Can be re-queued
+	StateRetrying:   {StateRunning, StateFailed, StateDeadLetter, StateCanceled, StatePending}, // StatePending: scheduler reactivates after backoff
+	StateFailed:     {StateRetrying, StateDeadLetter, StatePending},                            // Can retry or move to DLQ
+	StateCompleted:  {},                                                                        // Terminal state
+	StateCanceled:   {},                                                                        // Terminal state
+	StateDeadLetter: {StatePending},                                                            // Can be re-queued
 }
 
 // CanTransitionTo checks if a transition from current state to target state is valid

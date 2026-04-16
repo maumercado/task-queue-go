@@ -56,6 +56,7 @@ type QueueConfig struct {
 	RetryInitialBackoff time.Duration
 	RetryMaxBackoff     time.Duration
 	RetryBackoffFactor  float64
+	RetryJitterFactor   float64
 	TaskRetentionDays   int
 	RateLimitRPS        int
 }
@@ -138,6 +139,7 @@ func setDefaults() {
 	viper.SetDefault("queue.retryinitialbackoff", 1*time.Second)
 	viper.SetDefault("queue.retrymaxbackoff", 5*time.Minute)
 	viper.SetDefault("queue.retrybackofffactor", 2.0)
+	viper.SetDefault("queue.retryjitterfactor", 0.1)
 	viper.SetDefault("queue.taskretentiondays", 7)
 	viper.SetDefault("queue.ratelimitrps", 1000)
 

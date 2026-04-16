@@ -48,6 +48,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, int64(1000000), cfg.Queue.MaxQueueSize)
 	assert.Equal(t, 3, cfg.Queue.RetryMaxAttempts)
 	assert.Equal(t, 2.0, cfg.Queue.RetryBackoffFactor)
+	assert.Equal(t, 0.1, cfg.Queue.RetryJitterFactor)
 
 	// Metrics defaults
 	assert.True(t, cfg.Metrics.Enabled)
@@ -166,6 +167,7 @@ func TestQueueConfig_Fields(t *testing.T) {
 		RetryInitialBackoff: 1 * time.Second,
 		RetryMaxBackoff:     5 * time.Minute,
 		RetryBackoffFactor:  2.0,
+		RetryJitterFactor:   0.1,
 	}
 
 	assert.Equal(t, "tasks", cfg.StreamPrefix)

@@ -292,6 +292,13 @@ func (q *RedisQueue) GetRetentionTTL() time.Duration {
 	return time.Duration(q.taskRetentionDays) * 24 * time.Hour
 }
 
+// RemoveScheduledTask removes a task from the scheduled sorted set.
+// Used when canceling a scheduled or retrying task so the scheduler does not
+// reactivate it later.
+func (q *RedisQueue) RemoveScheduledTask(ctx context.Context, taskID string) error {
+	return q.client.ZRem(ctx, "tasks:scheduled", taskID).Err()
+}
+
 // DeleteTask removes task data from storage
 func (q *RedisQueue) DeleteTask(ctx context.Context, taskID string) error {
 	taskKey := q.taskKey(taskID)

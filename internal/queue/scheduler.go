@@ -119,9 +119,10 @@ func (s *Scheduler) activateTask(ctx context.Context, taskID string) error {
 		return nil
 	}
 
-	// Transition from scheduled to pending
-	if t.State != task.StateScheduled {
-		// Task is no longer in scheduled state, remove from set
+	// Accept both scheduled (first-run) and retrying (backoff delay) states.
+	// Any other state (including canceled) means the task was already handled;
+	// just clean up the sorted set entry.
+	if t.State != task.StateScheduled && t.State != task.StateRetrying {
 		s.client.ZRem(ctx, scheduledSetKey, taskID)
 		return nil
 	}
