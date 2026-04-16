@@ -201,8 +201,9 @@ func TestTaskLifecycle_ListQueues(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &listResp)
 	require.NoError(t, err)
 
-	assert.Contains(t, listResp, "queue_depths")
-	assert.Contains(t, listResp, "total_pending")
+	assert.Contains(t, listResp, "queues")
+	assert.Contains(t, listResp, "totals")
+	assert.Contains(t, listResp, "scheduled_count")
 }
 
 func TestTaskLifecycle_GetNotFound(t *testing.T) {
@@ -271,7 +272,8 @@ func TestAdminEndpoints_GetQueues(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, resp, "queues")
-	assert.Contains(t, resp, "total_depth")
+	assert.Contains(t, resp, "totals")
+	assert.Contains(t, resp, "scheduled_count")
 }
 
 func TestAdminEndpoints_DLQ(t *testing.T) {
