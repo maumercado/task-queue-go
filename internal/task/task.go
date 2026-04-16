@@ -107,6 +107,8 @@ type TaskResponse struct {
 	UpdatedAt   time.Time              `json:"updated_at"`
 	StartedAt   *time.Time             `json:"started_at,omitempty"`
 	CompletedAt *time.Time             `json:"completed_at,omitempty"`
+	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	NextRetryAt *time.Time             `json:"next_retry_at,omitempty"`
 	Metadata    map[string]string      `json:"metadata,omitempty"`
 }
 
@@ -150,7 +152,7 @@ func FromRequest(req *CreateTaskRequest) *Task {
 
 // ToResponse converts a Task to a TaskResponse
 func (t *Task) ToResponse() *TaskResponse {
-	return &TaskResponse{
+	resp := &TaskResponse{
 		ID:          t.ID,
 		Type:        t.Type,
 		Payload:     t.Payload,
@@ -165,8 +167,14 @@ func (t *Task) ToResponse() *TaskResponse {
 		UpdatedAt:   t.UpdatedAt,
 		StartedAt:   t.StartedAt,
 		CompletedAt: t.CompletedAt,
+		ScheduledAt: t.ScheduledAt,
 		Metadata:    t.Metadata,
 	}
+	// next_retry_at is only meaningful while waiting for backoff delay.
+	if t.State == StateRetrying && t.ScheduledAt != nil {
+		resp.NextRetryAt = t.ScheduledAt
+	}
+	return resp
 }
 
 // ToJSON serializes the task to JSON

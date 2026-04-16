@@ -305,7 +305,80 @@ func (q *RedisQueue) DeleteTask(ctx context.Context, taskID string) error {
 	return q.client.Del(ctx, taskKey).Err()
 }
 
-// GetQueueDepth returns pending message count for each priority queue
+// PriorityStats holds per-priority queue counters with truthful semantics.
+type PriorityStats struct {
+	// Queued is the total stream length (backlog) — all messages not yet ACKed,
+	// including those currently being processed.
+	Queued int64 `json:"queued"`
+	// PendingUnacked is the consumer-group PEL: delivered to a consumer but not
+	// yet ACKed. This is what "in-flight" means.
+	PendingUnacked int64 `json:"pending_unacked"`
+}
+
+// QueueStats holds system-wide queue inspection data with accurate semantics.
+type QueueStats struct {
+	Queues         map[string]*PriorityStats `json:"queues"`
+	ScheduledCount int64                     `json:"scheduled_count"`
+	DLQSize        int64                     `json:"dlq_size"`
+	Totals         struct {
+		Queued         int64 `json:"queued"`
+		PendingUnacked int64 `json:"pending_unacked"`
+		Deferred       int64 `json:"deferred"` // scheduled + retrying
+	} `json:"totals"`
+}
+
+// GetQueueStats returns accurate queue inspection data.
+// Queued = total stream backlog; PendingUnacked = consumer PEL.
+func (q *RedisQueue) GetQueueStats(ctx context.Context) (*QueueStats, error) {
+	priorities := []task.Priority{
+		task.PriorityCritical,
+		task.PriorityHigh,
+		task.PriorityNormal,
+		task.PriorityLow,
+	}
+
+	stats := &QueueStats{
+		Queues: make(map[string]*PriorityStats),
+	}
+
+	for _, p := range priorities {
+		streamName := p.StreamName(q.streamPrefix)
+		ps := &PriorityStats{}
+
+		// Stream length = total backlog
+		length, err := q.client.XLen(ctx, streamName).Result()
+		if err == nil {
+			ps.Queued = length
+		}
+
+		// PEL = pending unacked in our consumer group
+		groups, err := q.client.XInfoGroups(ctx, streamName).Result()
+		if err == nil {
+			for _, g := range groups {
+				if g.Name == q.consumerGroup {
+					ps.PendingUnacked = g.Pending
+					break
+				}
+			}
+		}
+
+		stats.Queues[p.String()] = ps
+		stats.Totals.Queued += ps.Queued
+		stats.Totals.PendingUnacked += ps.PendingUnacked
+	}
+
+	// Scheduled sorted set count (both StateScheduled and StateRetrying tasks)
+	scheduled, err := q.client.ZCard(ctx, "tasks:scheduled").Result()
+	if err == nil {
+		stats.ScheduledCount = scheduled
+	}
+	stats.Totals.Deferred = stats.ScheduledCount
+
+	return stats, nil
+}
+
+// GetQueueDepth returns pending-unacked (PEL) count per priority — kept for
+// backpressure check only. Use GetQueueStats for accurate inspection.
 func (q *RedisQueue) GetQueueDepth(ctx context.Context) (map[task.Priority]int64, error) {
 	depths := make(map[task.Priority]int64)
 	priorities := []task.Priority{
@@ -317,12 +390,10 @@ func (q *RedisQueue) GetQueueDepth(ctx context.Context) (map[task.Priority]int64
 
 	for _, p := range priorities {
 		streamName := p.StreamName(q.streamPrefix)
-		// Get consumer group info which includes pending count
 		info, err := q.client.XInfoGroups(ctx, streamName).Result()
 		if err != nil {
-			continue // Stream may not exist yet
+			continue
 		}
-
 		for _, group := range info {
 			if group.Name == q.consumerGroup {
 				depths[p] = group.Pending

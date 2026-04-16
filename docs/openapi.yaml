@@ -133,7 +133,7 @@ paths:
       tags:
         - Tasks
       summary: Cancel a task
-      description: Cancels a pending or scheduled task. Cannot cancel running tasks.
+      description: Cancels a pending, scheduled, or retrying task. Cannot cancel running, completed, or failed tasks.
       operationId: cancelTask
       parameters:
         - $ref: '#/components/parameters/taskId'
@@ -565,6 +565,14 @@ components:
         completed_at:
           type: string
           format: date-time
+        scheduled_at:
+          type: string
+          format: date-time
+          description: When the task is scheduled to run (for delayed/scheduled tasks and retrying tasks).
+        next_retry_at:
+          type: string
+          format: date-time
+          description: When the next retry attempt is scheduled. Only present when state is `retrying`.
         metadata:
           type: object
           additionalProperties:
@@ -594,37 +602,43 @@ components:
         error:
           type: string
 
-    QueueStats:
+    PriorityStats:
       type: object
       properties:
-        queue_depths:
-          type: object
-          properties:
-            critical:
-              type: integer
-            high:
-              type: integer
-            normal:
-              type: integer
-            low:
-              type: integer
-        total_pending:
+        queued:
           type: integer
+          description: Total stream backlog — all messages not yet ACKed.
+        pending_unacked:
+          type: integer
+          description: Messages delivered to a consumer but not yet ACKed (PEL / in-flight).
 
-    QueueDetailedStats:
+    QueueStats:
       type: object
       properties:
         queues:
           type: object
+          description: Per-priority stream stats.
           additionalProperties:
-            type: object
-            properties:
-              depth:
-                type: integer
-              priority:
-                type: integer
-        total_depth:
+            $ref: '#/components/schemas/PriorityStats'
+        scheduled_count:
           type: integer
+          description: Tasks in the scheduled sorted set (state=scheduled or state=retrying).
+        dlq_size:
+          type: integer
+          description: Tasks in the dead letter queue.
+        totals:
+          type: object
+          properties:
+            queued:
+              type: integer
+            pending_unacked:
+              type: integer
+            deferred:
+              type: integer
+              description: Alias for scheduled_count — tasks waiting for a future execution time.
+
+    QueueDetailedStats:
+      $ref: '#/components/schemas/QueueStats'
 
     WorkerInfo:
       type: object

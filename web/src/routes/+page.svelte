@@ -40,15 +40,21 @@
     return () => clearInterval(interval);
   });
 
-  function getMaxQueueDepth(depths: QueueStats['queue_depths']): number {
-    if (!depths) return 100;
+  function getQueueValue(priority: string): number {
+    if (!queueStats?.queues) return 0;
+    return queueStats.queues[priority]?.queued ?? 0;
+  }
+
+  function getMaxQueueDepth(): number {
+    if (!queueStats?.queues) return 100;
     const max = Math.max(
-      depths.critical ?? 0,
-      depths.high ?? 0,
-      depths.normal ?? 0,
-      depths.low ?? 0
+      ...['critical', 'high', 'normal', 'low'].map(p => getQueueValue(p))
     );
     return Math.max(max, 100);
+  }
+
+  function totalQueued(): number {
+    return queueStats?.totals?.queued ?? 0;
   }
 
   function getActiveWorkerCount(workers: WorkerListResponse | null): number {
@@ -90,8 +96,16 @@
         <p>Loading...</p>
       {:else}
         <div class="stat-row">
-          <span class="stat-label">Total Pending</span>
-          <span class="stat-value">{queueStats?.total_pending?.toLocaleString() ?? 0}</span>
+          <span class="stat-label">Total Queued</span>
+          <span class="stat-value">{totalQueued().toLocaleString()}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Scheduled / Retrying</span>
+          <span class="stat-value">{queueStats?.scheduled_count?.toLocaleString() ?? 0}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">DLQ Size</span>
+          <span class="stat-value">{queueStats?.dlq_size?.toLocaleString() ?? 0}</span>
         </div>
         <div class="stat-row">
           <span class="stat-label">Active Workers</span>
@@ -103,15 +117,15 @@
 
   <!-- Queue Depths -->
   <div class="card queue-depths">
-    <h3>Queue Depths</h3>
+    <h3>Queue Backlog</h3>
     {#if loading}
       <p>Loading...</p>
-    {:else if queueStats?.queue_depths}
+    {:else}
       {#each ['critical', 'high', 'normal', 'low'] as priority}
         <QueueBar
           label={priority}
-          value={queueStats.queue_depths[priority as keyof typeof queueStats.queue_depths] ?? 0}
-          maxValue={getMaxQueueDepth(queueStats.queue_depths)}
+          value={getQueueValue(priority)}
+          maxValue={getMaxQueueDepth()}
           color={QUEUE_COLORS[priority as keyof typeof QUEUE_COLORS]}
         />
       {/each}

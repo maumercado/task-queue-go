@@ -8,7 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/maumercado/task-queue-go/internal/events"
 	"github.com/maumercado/task-queue-go/internal/logger"
+	"github.com/maumercado/task-queue-go/internal/metrics"
 	"github.com/maumercado/task-queue-go/internal/queue"
 	"github.com/maumercado/task-queue-go/internal/task"
 )
@@ -19,18 +21,22 @@ type ScheduleTaskFunc func(ctx context.Context, t *task.Task, scheduledAt time.T
 // TaskHandler handles task-related HTTP requests
 type TaskHandler struct {
 	queue             *queue.RedisQueue
+	dlq               *queue.DLQ
 	scheduleTask      ScheduleTaskFunc
 	maxQueueSize      int64
 	defaultMaxRetries int
+	publisher         *events.RedisPubSub
 }
 
 // NewTaskHandler creates a new task handler
-func NewTaskHandler(q *queue.RedisQueue, scheduleTask ScheduleTaskFunc, maxQueueSize int64, defaultMaxRetries int) *TaskHandler {
+func NewTaskHandler(q *queue.RedisQueue, dlq *queue.DLQ, scheduleTask ScheduleTaskFunc, maxQueueSize int64, defaultMaxRetries int, publisher *events.RedisPubSub) *TaskHandler {
 	return &TaskHandler{
 		queue:             q,
+		dlq:               dlq,
 		scheduleTask:      scheduleTask,
 		maxQueueSize:      maxQueueSize,
 		defaultMaxRetries: defaultMaxRetries,
+		publisher:         publisher,
 	}
 }
 
@@ -91,6 +97,10 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Time("scheduled_at", *req.ScheduledAt).
 			Msg("task scheduled")
 
+		metrics.RecordTaskSubmission(t.Type, t.Priority.String())
+		metrics.RecordScheduledTask()
+		h.publishTaskEvent(r.Context(), events.EventTaskSubmitted, t, nil)
+
 		h.respondJSON(w, http.StatusCreated, t.ToResponse())
 		return
 	}
@@ -107,6 +117,9 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Str("type", t.Type).
 		Str("priority", t.Priority.String()).
 		Msg("task created")
+
+	metrics.RecordTaskSubmission(t.Type, t.Priority.String())
+	h.publishTaskEvent(r.Context(), events.EventTaskSubmitted, t, nil)
 
 	h.respondJSON(w, http.StatusCreated, t.ToResponse())
 }
@@ -194,33 +207,31 @@ type ListResponse struct {
 	TotalCount int                  `json:"total_count"`
 }
 
-// List handles GET /api/v1/tasks
+// List handles GET /api/v1/tasks — returns rich queue inspection data.
 func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
-	// Get queue depths for now (full listing would require additional Redis data structures)
-	depths, err := h.queue.GetQueueDepth(r.Context())
+	stats, err := h.queue.GetQueueStats(r.Context())
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to get queue depths")
+		logger.Error().Err(err).Msg("failed to get queue stats")
 		h.respondError(w, http.StatusInternalServerError, "failed to list tasks")
 		return
 	}
 
-	// Calculate total count from depths
-	var total int64
-	for _, depth := range depths {
-		total += depth
+	// Attach DLQ size
+	if h.dlq != nil {
+		if dlqSize, err := h.dlq.Size(r.Context()); err == nil {
+			stats.DLQSize = dlqSize
+		}
 	}
 
-	response := map[string]interface{}{
-		"queue_depths": map[string]int64{
-			"critical": depths[task.PriorityCritical],
-			"high":     depths[task.PriorityHigh],
-			"normal":   depths[task.PriorityNormal],
-			"low":      depths[task.PriorityLow],
-		},
-		"total_pending": total,
+	// Update Prometheus gauges
+	for priority, ps := range stats.Queues {
+		metrics.UpdateQueueBacklog(priority, float64(ps.Queued))
+		metrics.UpdateQueuePendingUnacked(priority, float64(ps.PendingUnacked))
 	}
+	metrics.SetScheduledTasksGauge(float64(stats.ScheduledCount))
+	metrics.SetDLQSize(float64(stats.DLQSize))
 
-	h.respondJSON(w, http.StatusOK, response)
+	h.respondJSON(w, http.StatusOK, stats)
 }
 
 // ErrorResponse represents an error response
@@ -242,4 +253,27 @@ func (h *TaskHandler) respondError(w http.ResponseWriter, status int, message st
 		Error:   http.StatusText(status),
 		Message: message,
 	})
+}
+
+// publishTaskEvent fires a task lifecycle event; non-fatal on failure.
+func (h *TaskHandler) publishTaskEvent(ctx context.Context, eventType events.EventType, t *task.Task, extra map[string]interface{}) {
+	if h.publisher == nil {
+		return
+	}
+	data := map[string]interface{}{
+		"task_id":  t.ID,
+		"type":     t.Type,
+		"priority": t.Priority.String(),
+		"state":    t.State.String(),
+		"attempts": t.Attempts,
+	}
+	if t.ScheduledAt != nil {
+		data["scheduled_at"] = t.ScheduledAt
+	}
+	for k, v := range extra {
+		data[k] = v
+	}
+	if err := h.publisher.Publish(ctx, events.NewEvent(eventType, data)); err != nil {
+		logger.Warn().Err(err).Str("event", string(eventType)).Str("task_id", t.ID).Msg("failed to publish task event")
+	}
 }

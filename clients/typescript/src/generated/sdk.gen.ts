@@ -49,7 +49,7 @@ export const createTask = <ThrowOnError extends boolean = false>(options: Option
 
 /**
  * Cancel a task
- * Cancels a pending or scheduled task. Cannot cancel running tasks.
+ * Cancels a pending, scheduled, or retrying task. Cannot cancel running, completed, or failed tasks.
  */
 export const cancelTask = <ThrowOnError extends boolean = false>(options: Options<CancelTaskData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).delete<CancelTaskResponses, CancelTaskErrors, ThrowOnError>({

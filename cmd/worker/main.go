@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/maumercado/task-queue-go/internal/config"
+	"github.com/maumercado/task-queue-go/internal/events"
 	"github.com/maumercado/task-queue-go/internal/logger"
 	"github.com/maumercado/task-queue-go/internal/queue"
 	"github.com/maumercado/task-queue-go/internal/task"
@@ -43,6 +44,14 @@ func main() {
 	// Create DLQ
 	dlq := queue.NewDLQ(redisQueue.Client())
 
+	// Create event publisher
+	publisher := events.NewRedisPubSub(redisQueue.Client())
+	defer func() {
+		if err := publisher.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close event publisher")
+		}
+	}()
+
 	// Register task handlers
 	handlers := map[string]worker.TaskHandler{
 		"echo":    echoHandler,
@@ -52,7 +61,7 @@ func main() {
 	}
 
 	// Create worker pool (queue config drives retry policy)
-	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers)
+	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers, publisher)
 
 	// Start worker pool
 	ctx, cancel := context.WithCancel(context.Background())

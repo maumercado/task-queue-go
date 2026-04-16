@@ -45,14 +45,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get queue stats: %v", err)
 	}
-	if stats.QueueDepths != nil {
-		fmt.Printf("Queue depths - Critical: %d, High: %d, Normal: %d, Low: %d\n",
-			safeInt(stats.QueueDepths.Critical),
-			safeInt(stats.QueueDepths.High),
-			safeInt(stats.QueueDepths.Normal),
-			safeInt(stats.QueueDepths.Low))
+	fmt.Printf("Queue stats - Scheduled: %d, DLQ: %d\n",
+		safeInt(stats.ScheduledCount),
+		safeInt(stats.DlqSize))
+	if stats.Totals != nil {
+		fmt.Printf("Totals - Queued: %d, Pending unacked: %d, Deferred: %d\n",
+			safeInt(stats.Totals.Queued),
+			safeInt(stats.Totals.PendingUnacked),
+			safeInt(stats.Totals.Deferred))
 	}
-	fmt.Printf("Total pending: %d\n\n", safeInt(stats.TotalPending))
 
 	// Create a task
 	fmt.Println("=== Create Task ===")

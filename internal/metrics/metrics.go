@@ -133,6 +133,61 @@ var (
 		[]string{"operation"},
 	)
 
+	// Retry / scheduling metrics
+	TasksRetrying = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "taskqueue_tasks_retrying_total",
+			Help: "Total number of automatic task retries scheduled",
+		},
+		[]string{"type"},
+	)
+
+	TasksScheduled = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "taskqueue_tasks_scheduled_total",
+			Help: "Total number of tasks submitted with a future scheduled_at",
+		},
+	)
+
+	RetryDelay = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "taskqueue_retry_delay_seconds",
+			Help:    "Backoff delay applied before retrying a failed task",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 10), // 0.5s to ~256s
+		},
+		[]string{"type"},
+	)
+
+	ScheduledTasksGauge = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "taskqueue_scheduled_tasks",
+			Help: "Current number of tasks waiting in the scheduled sorted set",
+		},
+	)
+
+	OrphanClaims = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "taskqueue_orphan_claims_total",
+			Help: "Total number of orphaned task messages claimed via XCLAIM",
+		},
+	)
+
+	QueueBacklog = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "taskqueue_queue_backlog",
+			Help: "Total messages in each priority stream (backlog including unacked)",
+		},
+		[]string{"priority"},
+	)
+
+	QueuePendingUnacked = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "taskqueue_queue_pending_unacked",
+			Help: "Messages delivered to consumers but not yet ACKed (PEL)",
+		},
+		[]string{"priority"},
+	)
+
 	// WebSocket metrics
 	WebSocketConnections = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -161,9 +216,40 @@ func RecordTaskCompletion(taskType, status string, duration float64) {
 	TaskDuration.WithLabelValues(taskType).Observe(duration)
 }
 
-// RecordTaskRetry records a task retry
+// RecordTaskRetry records a task retry (legacy counter kept for compatibility)
 func RecordTaskRetry(taskType string) {
 	TaskRetries.WithLabelValues(taskType).Inc()
+}
+
+// RecordTaskRetrying records an automatic delayed retry being scheduled.
+func RecordTaskRetrying(taskType string, delaySeconds float64) {
+	TasksRetrying.WithLabelValues(taskType).Inc()
+	RetryDelay.WithLabelValues(taskType).Observe(delaySeconds)
+}
+
+// RecordScheduledTask records a task submitted with a future scheduled_at.
+func RecordScheduledTask() {
+	TasksScheduled.Inc()
+}
+
+// SetScheduledTasksGauge sets the current scheduled sorted-set size.
+func SetScheduledTasksGauge(count float64) {
+	ScheduledTasksGauge.Set(count)
+}
+
+// RecordOrphanClaim records one orphaned message being claimed.
+func RecordOrphanClaim() {
+	OrphanClaims.Inc()
+}
+
+// UpdateQueueBacklog sets the backlog gauge for a priority stream.
+func UpdateQueueBacklog(priority string, count float64) {
+	QueueBacklog.WithLabelValues(priority).Set(count)
+}
+
+// UpdateQueuePendingUnacked sets the PEL gauge for a priority stream.
+func UpdateQueuePendingUnacked(priority string, count float64) {
+	QueuePendingUnacked.WithLabelValues(priority).Set(count)
 }
 
 // UpdateQueueDepth updates the queue depth gauge

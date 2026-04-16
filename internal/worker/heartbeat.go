@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/maumercado/task-queue-go/internal/events"
 	"github.com/maumercado/task-queue-go/internal/logger"
 )
 
@@ -32,24 +33,26 @@ type WorkerInfo struct {
 
 // Heartbeat manages worker heartbeat mechanism
 type Heartbeat struct {
-	client   *redis.Client
-	workerID string
-	interval time.Duration
-	timeout  time.Duration
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	info     *WorkerInfo
-	infoMu   sync.RWMutex
+	client    *redis.Client
+	workerID  string
+	interval  time.Duration
+	timeout   time.Duration
+	publisher *events.RedisPubSub
+	stopCh    chan struct{}
+	wg        sync.WaitGroup
+	info      *WorkerInfo
+	infoMu    sync.RWMutex
 }
 
 // NewHeartbeat creates a new heartbeat manager
-func NewHeartbeat(client *redis.Client, workerID string, interval, timeout time.Duration) *Heartbeat {
+func NewHeartbeat(client *redis.Client, workerID string, interval, timeout time.Duration, publisher *events.RedisPubSub) *Heartbeat {
 	return &Heartbeat{
-		client:   client,
-		workerID: workerID,
-		interval: interval,
-		timeout:  timeout,
-		stopCh:   make(chan struct{}),
+		client:    client,
+		workerID:  workerID,
+		interval:  interval,
+		timeout:   timeout,
+		publisher: publisher,
+		stopCh:    make(chan struct{}),
 		info: &WorkerInfo{
 			ID:        workerID,
 			State:     "idle",
@@ -163,14 +166,38 @@ func (h *Heartbeat) register(ctx context.Context) {
 	h.infoMu.Unlock()
 
 	h.client.Set(ctx, h.infoKey(), infoData, h.timeout*2)
+	h.publishWorkerEvent(ctx, events.EventWorkerJoined, "busy")
 }
 
 func (h *Heartbeat) deregister(ctx context.Context) {
+	h.publishWorkerEvent(ctx, events.EventWorkerLeft, "stopped")
+
 	// Remove from active workers set
 	h.client.SRem(ctx, workerSetKey, h.workerID)
 
 	// Remove heartbeat and info keys
 	h.client.Del(ctx, h.heartbeatKey(), h.infoKey())
+}
+
+// publishWorkerEvent fires a worker lifecycle event; non-fatal on failure.
+func (h *Heartbeat) publishWorkerEvent(ctx context.Context, eventType events.EventType, state string) {
+	if h.publisher == nil {
+		return
+	}
+	h.infoMu.RLock()
+	activeTasks := h.info.ActiveTasks
+	concurrency := h.info.Concurrency
+	h.infoMu.RUnlock()
+
+	data := map[string]interface{}{
+		"worker_id":    h.workerID,
+		"state":        state,
+		"active_tasks": activeTasks,
+		"concurrency":  concurrency,
+	}
+	if err := h.publisher.Publish(ctx, events.NewEvent(eventType, data)); err != nil {
+		logger.Warn().Err(err).Str("event", string(eventType)).Str("worker_id", h.workerID).Msg("failed to publish worker event")
+	}
 }
 
 func (h *Heartbeat) heartbeatKey() string {

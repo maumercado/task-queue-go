@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/maumercado/task-queue-go/internal/events"
 	"github.com/maumercado/task-queue-go/internal/logger"
 	"github.com/maumercado/task-queue-go/internal/queue"
 	"github.com/maumercado/task-queue-go/internal/task"
@@ -14,15 +16,17 @@ import (
 
 // AdminHandler handles admin API requests
 type AdminHandler struct {
-	queue *queue.RedisQueue
-	dlq   *queue.DLQ
+	queue     *queue.RedisQueue
+	dlq       *queue.DLQ
+	publisher *events.RedisPubSub
 }
 
 // NewAdminHandler creates a new admin handler
-func NewAdminHandler(q *queue.RedisQueue, dlq *queue.DLQ) *AdminHandler {
+func NewAdminHandler(q *queue.RedisQueue, dlq *queue.DLQ, publisher *events.RedisPubSub) *AdminHandler {
 	return &AdminHandler{
-		queue: q,
-		dlq:   dlq,
+		queue:     q,
+		dlq:       dlq,
+		publisher: publisher,
 	}
 }
 
@@ -80,27 +84,19 @@ func (h *AdminHandler) GetWorker(w http.ResponseWriter, r *http.Request) {
 
 // GetQueues handles GET /admin/queues
 func (h *AdminHandler) GetQueues(w http.ResponseWriter, r *http.Request) {
-	depths, err := h.queue.GetQueueDepth(r.Context())
+	stats, err := h.queue.GetQueueStats(r.Context())
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to get queue depths")
+		logger.Error().Err(err).Msg("failed to get queue stats")
 		h.respondError(w, http.StatusInternalServerError, "failed to get queue statistics")
 		return
 	}
 
-	var total int64
-	queueStats := make(map[string]interface{})
-	for priority, depth := range depths {
-		queueStats[priority.String()] = map[string]interface{}{
-			"depth":    depth,
-			"priority": int(priority),
-		}
-		total += depth
+	// DLQ size
+	if dlqSize, err := h.dlq.Size(r.Context()); err == nil {
+		stats.DLQSize = dlqSize
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"queues":      queueStats,
-		"total_depth": total,
-	})
+	h.respondJSON(w, http.StatusOK, stats)
 }
 
 // ListDLQ handles GET /admin/dlq
@@ -285,6 +281,7 @@ func (h *AdminHandler) PauseWorker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Info().Str("worker_id", workerID).Msg("worker paused")
+	h.publishWorkerEvent(r.Context(), events.EventWorkerPaused, workerID, "paused") //nolint:contextcheck
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message":   "worker paused",
 		"worker_id": workerID,
@@ -321,6 +318,7 @@ func (h *AdminHandler) ResumeWorker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Info().Str("worker_id", workerID).Msg("worker resumed")
+	h.publishWorkerEvent(r.Context(), events.EventWorkerResumed, workerID, "busy")
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message":   "worker resumed",
 		"worker_id": workerID,
@@ -379,4 +377,18 @@ func (h *AdminHandler) respondError(w http.ResponseWriter, status int, message s
 		"error":   http.StatusText(status),
 		"message": message,
 	})
+}
+
+// publishWorkerEvent fires a worker lifecycle event; non-fatal on failure.
+func (h *AdminHandler) publishWorkerEvent(ctx context.Context, eventType events.EventType, workerID, state string) {
+	if h.publisher == nil {
+		return
+	}
+	data := map[string]interface{}{
+		"worker_id": workerID,
+		"state":     state,
+	}
+	if err := h.publisher.Publish(ctx, events.NewEvent(eventType, data)); err != nil {
+		logger.Warn().Err(err).Str("event", string(eventType)).Str("worker_id", workerID).Msg("failed to publish worker event")
+	}
 }

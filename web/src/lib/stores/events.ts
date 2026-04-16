@@ -5,7 +5,7 @@ export interface EventWithId extends WebSocketEvent {
   id: string;
 }
 
-const MAX_EVENTS = 50;
+const MAX_EVENTS = 200;
 
 function createEventsStore() {
   const { subscribe, update } = writable<EventWithId[]>([]);

@@ -9,7 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/maumercado/task-queue-go/internal/config"
+	"github.com/maumercado/task-queue-go/internal/events"
 	"github.com/maumercado/task-queue-go/internal/logger"
+	"github.com/maumercado/task-queue-go/internal/metrics"
 	"github.com/maumercado/task-queue-go/internal/queue"
 	"github.com/maumercado/task-queue-go/internal/task"
 )
@@ -45,13 +47,14 @@ func (s State) String() string {
 // Pool manages a pool of concurrent worker goroutines.
 // Coordinates task fetching, execution, retry logic, and graceful shutdown.
 type Pool struct {
-	id             string            // Unique identifier for this worker pool
-	queue          *queue.RedisQueue // Queue to fetch tasks from
-	dlq            *queue.DLQ        // Dead letter queue for failed tasks
-	executor       *Executor         // Executes task handlers
-	heartbeat      *Heartbeat        // Sends heartbeats to indicate liveness
-	retryPolicy    *task.RetryPolicy // Policy governing backoff for automatic retries
-	scheduleTask   ScheduleTaskFunc  // Schedules delayed task via sorted set
+	id             string              // Unique identifier for this worker pool
+	queue          *queue.RedisQueue   // Queue to fetch tasks from
+	dlq            *queue.DLQ          // Dead letter queue for failed tasks
+	executor       *Executor           // Executes task handlers
+	heartbeat      *Heartbeat          // Sends heartbeats to indicate liveness
+	retryPolicy    *task.RetryPolicy   // Policy governing backoff for automatic retries
+	scheduleTask   ScheduleTaskFunc    // Schedules delayed task via sorted set
+	publisher      *events.RedisPubSub // Publishes lifecycle events
 	config         *config.WorkerConfig
 	state          State
 	stateMu        sync.RWMutex
@@ -73,7 +76,8 @@ type runningTask struct {
 
 // NewPool creates a new worker pool with the given configuration.
 // queueCfg drives the retry policy used for automatic (backoff) retries.
-func NewPool(cfg *config.WorkerConfig, queueCfg *config.QueueConfig, q *queue.RedisQueue, dlq *queue.DLQ, handlers map[string]TaskHandler) *Pool {
+// publisher may be nil; events are silently skipped when nil.
+func NewPool(cfg *config.WorkerConfig, queueCfg *config.QueueConfig, q *queue.RedisQueue, dlq *queue.DLQ, handlers map[string]TaskHandler, publisher *events.RedisPubSub) *Pool {
 	// Generate worker ID if not provided
 	workerID := cfg.ID
 	if workerID == "" {
@@ -94,6 +98,7 @@ func NewPool(cfg *config.WorkerConfig, queueCfg *config.QueueConfig, q *queue.Re
 		dlq:            dlq,
 		retryPolicy:    retryPolicy,
 		scheduleTask:   queue.ScheduleTaskFunc(q.Client()),
+		publisher:      publisher,
 		config:         cfg,
 		state:          StateIdle,
 		stopCh:         make(chan struct{}),
@@ -103,7 +108,7 @@ func NewPool(cfg *config.WorkerConfig, queueCfg *config.QueueConfig, q *queue.Re
 	}
 
 	p.executor = NewExecutor(handlers, retryPolicy)
-	p.heartbeat = NewHeartbeat(q.Client(), workerID, cfg.HeartbeatInterval, cfg.HeartbeatTimeout)
+	p.heartbeat = NewHeartbeat(q.Client(), workerID, cfg.HeartbeatInterval, cfg.HeartbeatTimeout, publisher)
 
 	return p
 }
@@ -307,21 +312,24 @@ func (p *Pool) processNextTask(ctx context.Context) error {
 	if err := p.queue.UpdateTask(ctx, t); err != nil {
 		logger.Error().Err(err).Str("task_id", t.ID).Msg("failed to update task state")
 	}
+	p.publishTaskEvent(ctx, events.EventTaskStarted, t, nil)
 
 	// Execute the task handler
+	start := time.Now()
 	result, execErr := p.executor.Execute(taskCtx, t)
+	duration := time.Since(start)
 
 	// Handle success or failure
 	if execErr != nil {
-		p.handleTaskFailure(ctx, t, messageID, execErr)
+		p.handleTaskFailure(ctx, t, messageID, execErr, duration)
 		return nil
 	}
 
-	return p.handleTaskSuccess(ctx, t, messageID, result)
+	return p.handleTaskSuccess(ctx, t, messageID, result, duration)
 }
 
 // handleTaskSuccess marks task as completed and acknowledges the message
-func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID string, result map[string]interface{}) error {
+func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID string, result map[string]interface{}, duration time.Duration) error {
 	sm := task.NewStateMachine(t)
 	if err := sm.Complete(result); err != nil {
 		return fmt.Errorf("failed to complete task: %w", err)
@@ -336,6 +344,13 @@ func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID st
 		return fmt.Errorf("failed to acknowledge: %w", err)
 	}
 
+	durationSec := duration.Seconds()
+	metrics.RecordTaskCompletion(t.Type, "completed", durationSec)
+	metrics.RecordWorkerBusyTime(p.id, durationSec)
+	p.publishTaskEvent(ctx, events.EventTaskCompleted, t, map[string]interface{}{
+		"duration_ms": duration.Milliseconds(),
+	})
+
 	logger.Info().
 		Str("task_id", t.ID).
 		Str("type", t.Type).
@@ -349,7 +364,7 @@ func (p *Pool) handleTaskSuccess(ctx context.Context, t *task.Task, messageID st
 // Retryable failures are scheduled for delayed retry via the sorted set using
 // exponential backoff. Exhausted tasks go to the dead letter queue.
 // The stream message is ACK'd only after the retry/DLQ path is safely committed.
-func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID string, execErr error) {
+func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID string, execErr error, duration time.Duration) {
 	log := logger.WithTask(t.ID)
 	log.Error().Err(execErr).Msg("task execution failed")
 
@@ -394,6 +409,14 @@ func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID st
 			return
 		}
 
+		delaySec := time.Until(*t.ScheduledAt).Seconds()
+		metrics.RecordTaskRetrying(t.Type, delaySec)
+		p.publishTaskEvent(ctx, events.EventTaskRetrying, t, map[string]interface{}{
+			"error":         execErr.Error(),
+			"next_retry_at": t.ScheduledAt,
+			"duration_ms":   duration.Milliseconds(),
+		})
+
 		log.Info().
 			Str("task_id", t.ID).
 			Time("retry_at", *t.ScheduledAt).
@@ -417,6 +440,14 @@ func (p *Pool) handleTaskFailure(ctx context.Context, t *task.Task, messageID st
 	if err := p.dlq.Add(ctx, t, "max retries exceeded"); err != nil {
 		log.Error().Err(err).Msg("failed to add task to DLQ")
 	}
+
+	metrics.RecordTaskCompletion(t.Type, "failed", duration.Seconds())
+	metrics.IncrementDLQAdded()
+	p.publishTaskEvent(ctx, events.EventTaskFailed, t, map[string]interface{}{
+		"error":       execErr.Error(),
+		"duration_ms": duration.Milliseconds(),
+	})
+
 	if err := p.queue.Acknowledge(ctx, t, messageID); err != nil {
 		log.Error().Err(err).Msg("failed to acknowledge task after DLQ")
 	}
@@ -461,6 +492,7 @@ func (p *Pool) recoverOrphanedTasks(ctx context.Context) {
 		retryer := task.NewRetryer(p.retryPolicy)
 		retryer.PrepareForRequeue(t)
 
+		metrics.RecordOrphanClaim()
 		if err := p.queue.Enqueue(ctx, t); err != nil {
 			logger.Error().Err(err).Str("task_id", t.ID).Msg("failed to re-enqueue recovered task")
 			continue
@@ -470,5 +502,29 @@ func (p *Pool) recoverOrphanedTasks(ctx context.Context) {
 		if err := p.queue.Acknowledge(ctx, t, messageIDs[i]); err != nil {
 			logger.Error().Err(err).Str("task_id", t.ID).Msg("failed to acknowledge recovered task")
 		}
+	}
+}
+
+// publishTaskEvent fires a task lifecycle event; non-fatal on failure.
+func (p *Pool) publishTaskEvent(ctx context.Context, eventType events.EventType, t *task.Task, extra map[string]interface{}) {
+	if p.publisher == nil {
+		return
+	}
+	data := map[string]interface{}{
+		"task_id":   t.ID,
+		"type":      t.Type,
+		"priority":  t.Priority.String(),
+		"state":     t.State.String(),
+		"attempts":  t.Attempts,
+		"worker_id": p.id,
+	}
+	if t.ScheduledAt != nil {
+		data["scheduled_at"] = t.ScheduledAt
+	}
+	for k, v := range extra {
+		data[k] = v
+	}
+	if err := p.publisher.Publish(ctx, events.NewEvent(eventType, data)); err != nil {
+		logger.Warn().Err(err).Str("event", string(eventType)).Str("task_id", t.ID).Msg("failed to publish task event")
 	}
 }

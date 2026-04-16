@@ -340,7 +340,7 @@ func TestWorkerPool_StartStop(t *testing.T) {
 		},
 	}
 
-	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers)
+	pool := worker.NewPool(&cfg.Worker, &cfg.Queue, redisQueue, dlq, handlers, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -54,6 +54,14 @@ export type TaskResponse = {
     updated_at?: string;
     started_at?: string;
     completed_at?: string;
+    /**
+     * When the task is scheduled to run (for delayed/scheduled tasks and retrying tasks).
+     */
+    scheduled_at?: string;
+    /**
+     * When the next retry attempt is scheduled. Only present when state is `retrying`.
+     */
+    next_retry_at?: string;
     metadata?: {
         [key: string]: string;
     };
@@ -76,25 +84,43 @@ export type HealthResponse = {
     error?: string;
 };
 
-export type QueueStats = {
-    queue_depths?: {
-        critical?: number;
-        high?: number;
-        normal?: number;
-        low?: number;
-    };
-    total_pending?: number;
+export type PriorityStats = {
+    /**
+     * Total stream backlog — all messages not yet ACKed.
+     */
+    queued?: number;
+    /**
+     * Messages delivered to a consumer but not yet ACKed (PEL / in-flight).
+     */
+    pending_unacked?: number;
 };
 
-export type QueueDetailedStats = {
+export type QueueStats = {
+    /**
+     * Per-priority stream stats.
+     */
     queues?: {
-        [key: string]: {
-            depth?: number;
-            priority?: number;
-        };
+        [key: string]: PriorityStats;
     };
-    total_depth?: number;
+    /**
+     * Tasks in the scheduled sorted set (state=scheduled or state=retrying).
+     */
+    scheduled_count?: number;
+    /**
+     * Tasks in the dead letter queue.
+     */
+    dlq_size?: number;
+    totals?: {
+        queued?: number;
+        pending_unacked?: number;
+        /**
+         * Alias for scheduled_count — tasks waiting for a future execution time.
+         */
+        deferred?: number;
+    };
 };
+
+export type QueueDetailedStats = QueueStats;
 
 export type WorkerInfo = {
     id?: string;
@@ -432,7 +458,7 @@ export type GetQueuesResponses = {
     /**
      * Queue statistics
      */
-    200: QueueDetailedStats;
+    200: QueueStats;
 };
 
 export type GetQueuesResponse = GetQueuesResponses[keyof GetQueuesResponses];
